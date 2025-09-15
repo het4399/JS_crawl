@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fast Crawler</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+      .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      input, button, select { font-size: 14px; padding: 8px 10px; }
+      #logs, #pages { border: 1px solid #ddd; padding: 10px; height: 260px; overflow: auto; background: #fafafa; }
+      #pages { height: 320px; }
+      .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+      h2 { margin: 12px 0 8px; font-size: 16px; }
+      .count { font-weight: 600; }
+      a { color: #0b6; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <h1>Fast Crawler</h1>
+    <div class="row">
+      <input id="url" size="40" placeholder="https://example.com" />
+      <label><input id="subs" type="checkbox" /> Allow subdomains</label>
+      <label>Concurrency <input id="conc" type="number" min="1" max="500" value="150" style="width:80px" /></label>
+      <button id="start">Start crawl</button>
+      <span class="count" id="count">0 pages</span>
+    </div>
+
+    <div class="wrap">
+      <div>
+        <h2>Logs</h2>
+        <div id="logs"></div>
+      </div>
+      <div>
+        <h2>Pages</h2>
+        <div id="pages"></div>
+      </div>
+    </div>
+
+    <script>
+      const logs = document.getElementById('logs');
+      const pages = document.getElementById('pages');
+      const countEl = document.getElementById('count');
+      let pageCount = 0;
+
+      function addLog(msg) {
+        const div = document.createElement('div');
+        div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logs.appendChild(div);
+        logs.scrollTop = logs.scrollHeight;
+      }
+
+      function addPage(url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noreferrer noopener';
+        a.textContent = url;
+        const div = document.createElement('div');
+        div.appendChild(a);
+        pages.appendChild(div);
+        pages.scrollTop = pages.scrollHeight;
+        pageCount += 1;
+        countEl.textContent = `${pageCount} pages`;
+      }
+
+      const evt = new EventSource('/events');
+      evt.addEventListener('log', (e) => {
+        const data = JSON.parse(e.data);
+        addLog(data.message);
+      });
+      evt.addEventListener('page', (e) => {
+        const data = JSON.parse(e.data);
+        addPage(data.url);
+      });
+      evt.addEventListener('done', (e) => {
+        const data = JSON.parse(e.data);
+        addLog(`Done. Total pages: ${data.count}`);
+      });
+
+      document.getElementById('start').addEventListener('click', async () => {
+        pageCount = 0;
+        countEl.textContent = '0 pages';
+        logs.textContent = '';
+        pages.textContent = '';
+        const url = document.getElementById('url').value.trim();
+        const allowSubdomains = document.getElementById('subs').checked;
+        const maxConcurrency = Number(document.getElementById('conc').value) || 150;
+        if (!url) { addLog('Please enter a URL'); return; }
+        try {
+          const res = await fetch('/crawl', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, allowSubdomains, maxConcurrency })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          addLog('Crawl started');
+        } catch (e) {
+          addLog('Error: ' + e.message);
+        }
+      });
+    </script>
+  </body>
+  </html>
+
+
