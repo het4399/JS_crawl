@@ -23,6 +23,11 @@
       <input id="url" size="40" placeholder="https://example.com" />
       <label><input id="subs" type="checkbox" /> Allow subdomains</label>
       <label>Concurrency <input id="conc" type="number" min="1" max="500" value="150" style="width:80px" /></label>
+      <select id="mode">
+        <option value="html" selected>HTML only (fast)</option>
+        <option value="auto">Auto (fallback to JS)</option>
+        <option value="js">JS only (Playwright)</option>
+      </select>
       <button id="start">Start crawl</button>
       <span class="count" id="count">0 pages</span>
     </div>
@@ -87,12 +92,13 @@
         const url = document.getElementById('url').value.trim();
         const allowSubdomains = document.getElementById('subs').checked;
         const maxConcurrency = Number(document.getElementById('conc').value) || 150;
+        const mode = document.getElementById('mode').value;
         if (!url) { addLog('Please enter a URL'); return; }
         try {
           const res = await fetch('/crawl', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, allowSubdomains, maxConcurrency })
+            body: JSON.stringify({ url, allowSubdomains, maxConcurrency, mode })
           });
           if (!res.ok) throw new Error(await res.text());
           addLog('Crawl started');

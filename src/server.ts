@@ -40,7 +40,7 @@ app.get('/events', (req, res) => {
 });
 
 app.post('/crawl', async (req, res) => {
-    const { url, allowSubdomains, maxConcurrency } = req.body ?? {};
+    const { url, allowSubdomains, maxConcurrency, mode } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
     res.json({ ok: true });
@@ -58,6 +58,7 @@ app.post('/crawl', async (req, res) => {
                     .split(',')
                     .map((s) => s.trim().toLowerCase())
                     .filter(Boolean),
+                mode: mode === 'js' || mode === 'auto' ? mode : 'html',
             }, {
                 onLog: (msg) => sendEvent({ type: 'log', message: msg }, 'log'),
                 onPage: (urlFound) => sendEvent({ type: 'page', url: urlFound }, 'page'),
@@ -69,9 +70,26 @@ app.post('/crawl', async (req, res) => {
     })();
 });
 
-const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
+const port = Number(process.env.PORT) || 3004;
+const server = app.listen(port, () => {
     console.log(`Server listening on http://localhost:${port}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\nShutting down server...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
+});
+
+process.on('SIGTERM', () => {
+    console.log('\nShutting down server...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 });
 
 

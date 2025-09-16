@@ -1,4 +1,4 @@
-import { CheerioCrawler, Dataset, log, RequestQueue } from 'crawlee';
+import { CheerioCrawler, Dataset, log, RequestQueue, PlaywrightCrawler } from 'crawlee';
 import { canonicalizeUrl, isSameSite } from './utils/url.js';
 
 type CrawlOptions = {
@@ -7,6 +7,7 @@ type CrawlOptions = {
     maxConcurrency: number;
     perHostDelayMs: number;
     denyParamPrefixes: string[];
+    mode?: 'html' | 'js' | 'auto';
 };
 
 type CrawlEvents = {
@@ -16,7 +17,7 @@ type CrawlEvents = {
 };
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes } = options;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html' } = options;
     const { onLog, onPage, onDone } = events;
 
     const start = new URL(startUrl);
@@ -31,7 +32,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
     // Always enqueue the start URL
     await queue.addRequests([{ url: start.href }]);
 
-    const crawler = new CheerioCrawler({
+    const cheerioCrawler = new CheerioCrawler({
         requestQueue: queue,
         maxConcurrency,
         // Limit per-host rate a bit for politeness
@@ -81,6 +82,11 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
                     },
                 });
             }
+
+            // In auto mode, if the page has very few links, try JS-rendered version via Playwright
+            if (mode === 'auto' && toEnqueue.length < 3) {
+                jsFallbackUrls.add(url);
+            }
         },
         errorHandler: ({ request, error }) => {
             const warn = `Request failed ${request.url}: ${error.message}`;
@@ -92,9 +98,55 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
         // by using autoscaled concurrency and not hammering one host too hard.
     });
 
-    await crawler.run();
+    // Optional Playwright crawler for JS-rendered pages
+    const jsFallbackUrls: Set<string> = new Set();
+    const playwrightCrawler = new PlaywrightCrawler({
+        maxConcurrency: Math.max(1, Math.floor(maxConcurrency / 5)),
+        requestHandlerTimeoutSecs: 90,
+        requestHandler: async ({ request, page, enqueueLinks, log: reqLog }) => {
+            const { url } = request;
+            await page.waitForLoadState('domcontentloaded');
+            // Give some time for JS to render links
+            await page.waitForTimeout(500);
+            onLog?.(`JS-rendered: ${url}`);
+            await Dataset.pushData({ url });
+            onPage?.(url);
+            await enqueueLinks({
+                strategy: 'same-domain',
+                transformRequestFunction: (req) => {
+                    if (!isSameSite(req.url, allowedHost, allowSubdomains)) return null;
+                    const canon = canonicalizeUrl(req.url, { allowedHost, allowSubdomains, denyParamPrefixes });
+                    if (!canon) return null;
+                    req.url = canon;
+                    return req;
+                },
+            });
+        },
+        errorHandler: ({ request, error }) => {
+            const warn = `Playwright failed ${request.url}: ${error.message}`;
+            log.warning(warn);
+            onLog?.(warn);
+        },
+        headless: true,
+        launchContext: { 
+            launchOptions: {
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            }
+        },
+    });
 
-    const { itemCount } = await Dataset.getInfo() ?? { itemCount: 0 };
+    if (mode === 'js') {
+        await playwrightCrawler.run([{ url: start.href }]);
+    } else {
+        await cheerioCrawler.run([{ url: start.href }]);
+        if (mode === 'auto' && jsFallbackUrls.size > 0) {
+            onLog?.(`Auto mode: retrying ${jsFallbackUrls.size} page(s) with JS renderer`);
+            await playwrightCrawler.run(Array.from(jsFallbackUrls).map((u) => ({ url: u })));
+        }
+    }
+
+    const dataset = await Dataset.open();
+    const { itemCount } = await dataset.getInfo() ?? { itemCount: 0 };
     const doneMsg = `Crawl complete. Pages discovered: ${itemCount}`;
     log.info(doneMsg);
     onLog?.(doneMsg);

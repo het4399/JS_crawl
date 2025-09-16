@@ -34,6 +34,7 @@ async function main() {
         maxConcurrency,
         perHostDelayMs,
         denyParamPrefixes: denyParams,
+        mode: (process.env.MODE as 'html'|'js'|'auto') || 'html'
     });
 }
 
