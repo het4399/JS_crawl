@@ -1,5 +1,7 @@
 import { CheerioCrawler, Dataset, log, RequestQueue, PlaywrightCrawler } from 'crawlee';
 import { canonicalizeUrl, isSameSite } from './utils/url.js';
+import { Logger } from './logging/Logger.js';
+import { MetricsCollector } from './monitoring/MetricsCollector.js';
 
 type CrawlOptions = {
     startUrl: string;
@@ -16,9 +18,10 @@ type CrawlEvents = {
     onDone?: (count: number) => void;
 };
 
-export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}): Promise<void> {
+export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
     const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html' } = options;
     const { onLog, onPage, onDone } = events;
+    const logger = Logger.getInstance();
 
     const start = new URL(startUrl);
     const allowedHost = start.hostname;
@@ -41,15 +44,47 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
         requestHandlerTimeoutSecs: 60,
         requestHandler: async ({ request, $, enqueueLinks, log: reqLog, response }) => {
             const { url } = request;
+            const requestStartTime = Date.now();
+            
             if (response?.statusCode && response.statusCode >= 400) {
-                reqLog.debug(`Skipping ${url} due to status ${response.statusCode}`);
-                onLog?.(`Skipping ${url} due to status ${response.statusCode}`);
+                const duration = Date.now() - requestStartTime;
+                const errorMsg = `Skipping ${url} due to status ${response.statusCode}`;
+                reqLog.debug(errorMsg);
+                onLog?.(errorMsg);
+                
+                // Record failed request in metrics
+                if (metricsCollector) {
+                    metricsCollector.recordRequest({
+                        url,
+                        statusCode: response.statusCode,
+                        responseTime: duration,
+                        timestamp: new Date().toISOString(),
+                        success: false,
+                        error: `HTTP ${response.statusCode}`
+                    });
+                }
+                
+                logger.warn('Request failed', { url, statusCode: response.statusCode, duration });
                 return;
             }
 
             // Record the page URL
             await Dataset.pushData({ url });
             onPage?.(url);
+            
+            // Record successful request in metrics
+            const duration = Date.now() - requestStartTime;
+            if (metricsCollector) {
+                metricsCollector.recordRequest({
+                    url,
+                    statusCode: response?.statusCode || 200,
+                    responseTime: duration,
+                    timestamp: new Date().toISOString(),
+                    success: true
+                });
+            }
+            
+            logger.debug('Page processed', { url, duration });
 
             // Enqueue same-site links discovered on the page
             const toEnqueue: string[] = [];
@@ -89,7 +124,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
             }
         },
         errorHandler: ({ request, error }) => {
-            const warn = `Request failed ${request.url}: ${error.message}`;
+            const warn = `Request failed ${request.url}: ${(error as Error).message}`;
             log.warning(warn);
             onLog?.(warn);
         },
@@ -123,7 +158,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}):
             });
         },
         errorHandler: ({ request, error }) => {
-            const warn = `Playwright failed ${request.url}: ${error.message}`;
+            const warn = `Playwright failed ${request.url}: ${(error as Error).message}`;
             log.warning(warn);
             onLog?.(warn);
         },
