@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { HealthChecker } from '../monitoring/HealthCheck.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { Logger } from '../logging/Logger.js';
-import { Dataset } from 'crawlee';
+import { Dataset, RequestQueue } from 'crawlee';
 
 const router = Router();
 const healthChecker = new HealthChecker();
@@ -317,16 +317,16 @@ router.get('/data/check', async (req, res) => {
 router.get('/data/list', async (req, res) => {
   try {
     const dataset = await Dataset.open();
-    const data = await dataset.getData({ limit: 10 });
+    const data = await dataset.getData({ limit: 1000 }); // Get more data for the viewer
     
     res.json({
+      data: data?.items || [],
       datasetInfo: {
         name: 'default',
         itemCount: data?.items?.length || 0,
         totalItems: data?.total || 0,
         hasData: !!(data && data.items && data.items.length > 0)
       },
-      sampleItems: data?.items?.slice(0, 5) || [],
       message: data && data.items && data.items.length > 0 
         ? 'Dataset contains data' 
         : 'Dataset is empty - run a crawl first'
@@ -335,7 +335,46 @@ router.get('/data/list', async (req, res) => {
     logger.error('Failed to list dataset data', error as Error);
     res.status(500).json({ 
       error: 'Failed to list dataset data',
-      details: error.message
+      details: (error as Error).message
+    });
+  }
+});
+
+// Clear all data endpoint
+router.delete('/data/clear', async (req, res) => {
+  try {
+    // Clear the dataset (use default dataset)
+    const dataset = await Dataset.open();
+    await dataset.drop();
+    
+    // Clear the request queue to allow re-crawling same URLs
+    const requestQueue = await RequestQueue.open();
+    const queueInfo = await requestQueue.getInfo();
+    logger.info('Clearing request queue', { 
+      queueName: queueInfo?.name, 
+      pendingCount: queueInfo?.pendingRequestCount,
+      handledCount: queueInfo?.handledRequestCount 
+    });
+    await requestQueue.drop();
+    
+    // Reset metrics
+    metricsCollector.reset();
+    
+    // Clear logs
+    logger.clearLogs();
+    
+    res.json({ 
+      message: 'All data cleared successfully (dataset, queue, metrics, and logs)',
+      timestamp: new Date().toISOString()
+    });
+    
+    logger.info('All data cleared by user request');
+  } catch (error) {
+    logger.error('Failed to clear data', error as Error);
+    res.status(500).json({ 
+      error: 'Failed to clear data',
+      details: (error as Error).message,
+      timestamp: new Date().toISOString()
     });
   }
 });
