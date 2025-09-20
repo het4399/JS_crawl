@@ -12,6 +12,7 @@ interface CrawlData {
   responseTime: number;
   timestamp: string;
   success: boolean;
+  resourceType?: string;
 }
 
 
@@ -24,8 +25,12 @@ function App() {
   const [pageCount, setPageCount] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
-  const [exportFormat, setExportFormat] = useState('json');
   const [showDataViewer, setShowDataViewer] = useState(false);
+  const [crawlStats, setCrawlStats] = useState<{
+    count: number;
+    duration: number;
+    pagesPerSecond: number;
+  } | null>(null);
   
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -46,8 +51,23 @@ function App() {
     });
 
     eventSource.addEventListener('done', (e) => {
+      console.log('Raw event data:', e.data);
       const data = JSON.parse(e.data);
-      setLogs(prev => [...prev, `✅ Crawl completed! Total pages: ${data.count}`]);
+      console.log('Parsed event data:', data);
+      console.log('Data keys:', Object.keys(data));
+      console.log('Data values:', Object.values(data));
+      
+      const duration = data.duration || 0;
+      const pagesPerSecond = data.pagesPerSecond || 0;
+      
+      console.log('Final values:', { count: data.count, duration, pagesPerSecond });
+      
+      setCrawlStats({
+        count: data.count,
+        duration: duration,
+        pagesPerSecond: pagesPerSecond
+      });
+      setLogs(prev => [...prev, `✅ Crawl completed! Total pages: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
       setIsCrawling(false);
     });
 
@@ -87,47 +107,6 @@ function App() {
 
   // Resume functionality removed for minimal UI
 
-  const exportData = async () => {
-    try {
-      const response = await fetch(`/api/export?format=${exportFormat}`);
-      if (!response.ok) throw new Error('Export failed');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `crawl-results-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
-      
-      setLogs(prev => [...prev, `✅ Data exported successfully as ${exportFormat.toUpperCase()}`]);
-    } catch (error) {
-      setLogs(prev => [...prev, `❌ Export failed: ${(error as Error).message}`]);
-    }
-  };
-
-  const exportMetrics = async () => {
-    try {
-      const response = await fetch(`/api/export/metrics?format=${exportFormat}`);
-      if (!response.ok) throw new Error('Metrics export failed');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `crawl-metrics-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
-      
-      setLogs(prev => [...prev, `✅ Metrics exported successfully as ${exportFormat.toUpperCase()}`]);
-    } catch (error) {
-      setLogs(prev => [...prev, `❌ Metrics export failed: ${(error as Error).message}`]);
-    }
-  };
 
   return (
     <div className="app">
@@ -147,6 +126,32 @@ function App() {
             <span className="stat-number">{isCrawling ? 'Active' : 'Ready'}</span>
             <span className="stat-label">Status</span>
           </div>
+          
+          {crawlStats && (
+            <>
+              <div className="stat-card">
+                <div className="stat-icon">📊</div>
+                <div className="stat-content">
+                  <div className="stat-value">{crawlStats.count}</div>
+                  <div className="stat-label">Total URLs</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">⏱️</div>
+                <div className="stat-content">
+                  <div className="stat-value">{crawlStats.duration}s</div>
+                  <div className="stat-label">Duration</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">🚀</div>
+                <div className="stat-content">
+                  <div className="stat-value">{crawlStats.pagesPerSecond}</div>
+                  <div className="stat-label">Pages/sec</div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
@@ -210,34 +215,17 @@ function App() {
           >
             {isCrawling ? '⏳ Crawling...' : '🚀 Start Crawl'}
           </button>
+          
+          <button
+            onClick={() => setShowDataViewer(true)}
+            className="viewer-btn"
+          >
+            📊 View Data
+          </button>
         </div>
 
         {/* Resume UI removed for minimalism */}
 
-        <div className="export-section">
-          <h3>📤 Export Results</h3>
-          <div className="export-controls">
-            <select
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
-              className="select"
-            >
-              <option value="json">JSON</option>
-              <option value="csv">CSV</option>
-              <option value="txt">Text (URLs only)</option>
-              <option value="xml">XML</option>
-            </select>
-            <button onClick={exportData} className="export-btn">
-              📥 Export Data
-            </button>
-            <button onClick={exportMetrics} className="export-btn">
-              📊 Export Metrics
-            </button>
-            <button onClick={() => setShowDataViewer(true)} className="viewer-btn">
-              📊 View Data
-            </button>
-          </div>
-        </div>
 
         <div className="status-bar">
           <div className="status-indicator">
