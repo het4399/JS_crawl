@@ -11,6 +11,7 @@ interface CrawlData {
   responseTime: number;
   timestamp: string;
   success: boolean;
+  resourceType?: string;
 }
 
 interface DataViewerProps {
@@ -25,20 +26,30 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
+  const [serverOffset, setServerOffset] = useState(0);
+  const [serverLimit] = useState(1000);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (opts?: { append?: boolean }) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/data/list');
+      const response = await fetch(`/api/data/list?limit=${serverLimit}&offset=${opts?.append ? serverOffset : 0}`);
       if (!response.ok) throw new Error('Failed to load data');
       
       const result = await response.json();
       console.log('DataViewer received data:', result);
-      setData(result.data || []);
+      setServerTotal(result?.paging?.total ?? null);
+      const items = result.data || [];
+      if (opts?.append) {
+        setData(prev => [...prev, ...items]);
+      } else {
+        setData(items);
+      }
+      setServerOffset((opts?.append ? serverOffset : 0) + items.length);
     } catch (error) {
       console.error('Error loading data:', error);
       setData([]);
@@ -206,7 +217,10 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
         </div>
 
         <div className="data-stats">
-          <span>Total: {data.length} items</span>
+          <span>Total (loaded): {data.length} items</span>
+          {serverTotal !== null && (
+            <span>Server total: {serverTotal}</span>
+          )}
           <span>Filtered: {filteredAndSortedData.length} items</span>
           <span>Page {currentPage} of {totalPages}</span>
         </div>
@@ -220,6 +234,9 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                 </th>
                 <th onClick={() => handleSort('title')} className="sortable">
                   Title {sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>
+                  Resource Type
                 </th>
                 <th onClick={() => handleSort('description')} className="sortable">
                   Meta Description {sortField === 'description' && (sortDirection === 'asc' ? '↑' : '↓')}
@@ -251,6 +268,9 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                   </td>
                   <td className="title-cell" title={item.title || 'No title'}>
                     {item.title || 'No title'}
+                  </td>
+                  <td className="resource-type-cell">
+                    {item.resourceType ? item.resourceType.toUpperCase() : 'PAGE'}
                   </td>
                   <td className="description-cell" title={item.description || 'No description'}>
                     {item.description || 'No description'}
@@ -310,6 +330,18 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
               className="page-btn"
             >
               Last
+            </button>
+          </div>
+        )}
+
+        {serverTotal !== null && data.length < serverTotal && (
+          <div className="pagination">
+            <button 
+              onClick={() => loadData({ append: true })}
+              className="page-btn"
+              disabled={loading}
+            >
+              {loading ? 'Loading…' : 'Load more'}
             </button>
           </div>
         )}

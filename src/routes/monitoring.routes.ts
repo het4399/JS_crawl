@@ -122,15 +122,41 @@ router.get('/export', async (req, res) => {
     logger.info('Export request received', { format, limit });
     
     const dataset = await Dataset.open();
-    const data = await dataset.getData({ limit: limit ? parseInt(limit as string) : undefined });
+    const limitNum = limit ? parseInt(limit as string) : undefined;
+
+    // Fetch items (all by default, using paging to avoid implicit caps)
+    let items: any[] = [];
+    let total = 0;
+    if (typeof limitNum === 'number' && !Number.isNaN(limitNum)) {
+      const data = await dataset.getData({ limit: limitNum });
+      items = data.items || [];
+      total = data.total || items.length;
+    } else {
+      const pageSize = 5000;
+      let offset = 0;
+      while (true) {
+        const page = await dataset.getData({ limit: pageSize, offset });
+        const pageItems = page?.items || [];
+        if (pageItems.length === 0) {
+          total = page?.total || items.length;
+          break;
+        }
+        items.push(...pageItems);
+        offset += pageItems.length;
+        if (typeof page.total === 'number' && offset >= page.total) {
+          total = page.total;
+          break;
+        }
+      }
+    }
     
     logger.info('Dataset data retrieved', { 
-      hasData: !!data, 
-      itemCount: data?.items?.length || 0,
-      totalItems: data?.total || 0
+      hasData: items.length > 0, 
+      itemCount: items.length,
+      totalItems: total
     });
     
-    if (!data || !data.items || data.items.length === 0) {
+    if (!items || items.length === 0) {
       logger.warn('No crawl data found for export');
       return res.status(404).json({ 
         error: 'No crawl data found',
@@ -143,21 +169,21 @@ router.get('/export', async (req, res) => {
 
     switch (format) {
       case 'csv':
-        const csv = convertToCSV(data.items);
+        const csv = convertToCSV(items);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
         res.send(csv);
         break;
         
       case 'txt':
-        const txt = data.items.map((item: any) => item.url).join('\n');
+        const txt = items.map((item: any) => item.url).join('\n');
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.txt"`);
         res.send(txt);
         break;
         
       case 'xml':
-        const xml = convertToXML(data.items);
+        const xml = convertToXML(items);
         res.setHeader('Content-Type', 'application/xml');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.xml"`);
         res.send(xml);
@@ -170,15 +196,15 @@ router.get('/export', async (req, res) => {
         res.json({
           exportInfo: {
             timestamp: new Date().toISOString(),
-            totalUrls: data.items.length,
+            totalUrls: items.length,
             format: 'json'
           },
-          urls: data.items
+          urls: items
         });
         break;
     }
     
-    logger.info(`Data exported`, { format, count: data.items.length });
+    logger.info(`Data exported`, { format, count: items.length });
   } catch (error) {
     logger.error('Failed to export data', error as Error);
     res.status(500).json({ error: 'Failed to export data' });
@@ -317,10 +343,20 @@ router.get('/data/check', async (req, res) => {
 router.get('/data/list', async (req, res) => {
   try {
     const dataset = await Dataset.open();
-    const data = await dataset.getData({ limit: 1000 }); // Get more data for the viewer
-    
+    const limit = Math.min(parseInt(req.query.limit as string) || 1000, 5000);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+    const data = await dataset.getData({ limit, offset });
+
     res.json({
       data: data?.items || [],
+      paging: {
+        limit,
+        offset,
+        count: data?.items?.length || 0,
+        total: data?.total || 0,
+        hasMore: typeof data?.total === 'number' ? offset + (data?.items?.length || 0) < (data.total as number) : false,
+      },
       datasetInfo: {
         name: 'default',
         itemCount: data?.items?.length || 0,

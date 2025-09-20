@@ -46,6 +46,11 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     // Track request start times for response time calculation
     const requestStartTimes = new Map<string, number>();
 
+    // Track globally emitted resources to avoid duplicate rows across pages
+    const emittedCss = new Set<string>();
+    const emittedJs = new Set<string>();
+    const emittedImg = new Set<string>();
+
     const cheerioCrawler = new CheerioCrawler({
         requestQueue: queue,
         maxConcurrency,
@@ -176,6 +181,87 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 });
             }
 
+            // Collect CSS/JS/images as separate resource rows (global dedup, no caps)
+
+            const abs = (href?: string) => {
+                if (!href) return null;
+                try { return new URL(href, url).toString(); } catch { return null; }
+            };
+
+            const cssSet = new Set<string>();
+            $('link[rel="stylesheet"][href]')
+              .each((_i, el) => {
+                  const u = abs($(el).attr('href'));
+                  if (u) cssSet.add(u);
+              });
+
+            const jsSet = new Set<string>();
+            $('script[src]')
+              .each((_i, el) => {
+                  const u = abs($(el).attr('src'));
+                  if (u) jsSet.add(u);
+              });
+
+            const imgSet = new Set<string>();
+            $('img[src]')
+              .each((_i, el) => {
+                  const u = abs($(el).attr('src'));
+                  if (u) imgSet.add(u);
+              });
+
+            const nowIso = new Date().toISOString();
+            for (const u of cssSet) {
+                if (!emittedCss.has(u)) {
+                    emittedCss.add(u);
+                    await Dataset.pushData({
+                        url: u,
+                        resourceType: 'css',
+                        title: '',
+                        description: '',
+                        contentType: 'text/css',
+                        lastModified: null,
+                        statusCode: 0,
+                        responseTime: 0,
+                        timestamp: nowIso,
+                        success: true,
+                    });
+                }
+            }
+            for (const u of jsSet) {
+                if (!emittedJs.has(u)) {
+                    emittedJs.add(u);
+                    await Dataset.pushData({
+                        url: u,
+                        resourceType: 'js',
+                        title: '',
+                        description: '',
+                        contentType: 'application/javascript',
+                        lastModified: null,
+                        statusCode: 0,
+                        responseTime: 0,
+                        timestamp: nowIso,
+                        success: true,
+                    });
+                }
+            }
+            for (const u of imgSet) {
+                if (!emittedImg.has(u)) {
+                    emittedImg.add(u);
+                    await Dataset.pushData({
+                        url: u,
+                        resourceType: 'image',
+                        title: '',
+                        description: '',
+                        contentType: 'image/*',
+                        lastModified: null,
+                        statusCode: 0,
+                        responseTime: 0,
+                        timestamp: nowIso,
+                        success: true,
+                    });
+                }
+            }
+
             // In auto mode, if the page has very few links, try JS-rendered version via Playwright
             if (mode === 'auto' && toEnqueue.length < 3) {
                 jsFallbackUrls.add(url);
@@ -261,6 +347,36 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     return req;
                 },
             });
+
+            // Collect resources on JS-rendered pages (global dedup, no caps)
+            const nowIso = new Date().toISOString();
+            const abs = (u: string) => {
+                try { return new URL(u, url).toString(); } catch { return null; }
+            };
+            const cssHrefs = await page.$$eval('link[rel="stylesheet"][href]', els => els.map(e => (e as HTMLLinkElement).href)).catch(() => [] as string[]);
+            const jsSrcs = await page.$$eval('script[src]', els => els.map(e => (e as HTMLScriptElement).src)).catch(() => [] as string[]);
+            const imgSrcs = await page.$$eval('img[src]', els => els.map(e => (e as HTMLImageElement).src)).catch(() => [] as string[]);
+            const cssSet = new Set(cssHrefs.map(abs).filter(Boolean) as string[]);
+            const jsSet = new Set(jsSrcs.map(abs).filter(Boolean) as string[]);
+            const imgSet = new Set(imgSrcs.map(abs).filter(Boolean) as string[]);
+            for (const u of cssSet) {
+                if (!emittedCss.has(u)) {
+                    emittedCss.add(u);
+                    await Dataset.pushData({ url: u, resourceType: 'css', title: '', description: '', contentType: 'text/css', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
+                }
+            }
+            for (const u of jsSet) {
+                if (!emittedJs.has(u)) {
+                    emittedJs.add(u);
+                    await Dataset.pushData({ url: u, resourceType: 'js', title: '', description: '', contentType: 'application/javascript', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
+                }
+            }
+            for (const u of imgSet) {
+                if (!emittedImg.has(u)) {
+                    emittedImg.add(u);
+                    await Dataset.pushData({ url: u, resourceType: 'image', title: '', description: '', contentType: 'image/*', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
+                }
+            }
         },
         errorHandler: async ({ request, error }) => {
             const warn = `Playwright failed ${request.url}: ${(error as Error).message}`;
