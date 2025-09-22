@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { HealthChecker } from '../monitoring/HealthCheck.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { Logger } from '../logging/Logger.js';
-import { Dataset, RequestQueue } from 'crawlee';
+import { RequestQueue } from 'crawlee';
+import { getDatabase } from '../database/DatabaseService.js';
 
 const router = Router();
 const healthChecker = new HealthChecker();
@@ -13,14 +14,13 @@ const logger = Logger.getInstance();
 router.get('/health', (req, res) => {
   try {
     const healthStatus = healthChecker.getHealthStatus();
-    const statusCode = healthStatus.status === 'healthy' ? 200 : 
+    const statusCode = healthStatus.status === 'healthy' ? 200 :
                       healthStatus.status === 'degraded' ? 200 : 503;
-    
     res.status(statusCode).json(healthStatus);
   } catch (error) {
     logger.error('Health check failed', error as Error);
-    res.status(500).json({ 
-      status: 'unhealthy', 
+    res.status(500).json({
+      status: 'unhealthy',
       error: 'Health check failed',
       timestamp: new Date().toISOString()
     });
@@ -78,13 +78,9 @@ router.get('/logs', (req, res) => {
 router.get('/logs/range', (req, res) => {
   try {
     const { startTime, endTime } = req.query;
-    
     if (!startTime || !endTime) {
-      return res.status(400).json({ 
-        error: 'startTime and endTime query parameters are required' 
-      });
+      return res.status(400).json({ error: 'startTime and endTime query parameters are required' });
     }
-    
     const logs = logger.getLogsByTimeRange(startTime as string, endTime as string);
     res.json(logs);
   } catch (error) {
@@ -120,91 +116,56 @@ router.get('/export', async (req, res) => {
   try {
     const { format = 'json', limit } = req.query;
     logger.info('Export request received', { format, limit });
-    
-    const dataset = await Dataset.open();
+
+    const db = getDatabase();
     const limitNum = limit ? parseInt(limit as string) : undefined;
 
-    // Fetch items (all by default, using paging to avoid implicit caps)
-    let items: any[] = [];
-    let total = 0;
-    if (typeof limitNum === 'number' && !Number.isNaN(limitNum)) {
-      const data = await dataset.getData({ limit: limitNum });
-      items = data.items || [];
-      total = data.total || items.length;
-    } else {
-      const pageSize = 5000;
-      let offset = 0;
-      while (true) {
-        const page = await dataset.getData({ limit: pageSize, offset });
-        const pageItems = page?.items || [];
-        if (pageItems.length === 0) {
-          total = page?.total || items.length;
-          break;
-        }
-        items.push(...pageItems);
-        offset += pageItems.length;
-        if (typeof page.total === 'number' && offset >= page.total) {
-          total = page.total;
-          break;
-        }
-      }
-    }
-    
-    logger.info('Dataset data retrieved', { 
-      hasData: items.length > 0, 
-      itemCount: items.length,
-      totalItems: total
-    });
-    
+    const pages = db.getPages(undefined, limitNum || 10000, 0);
+    const resources = db.getResources(undefined, undefined, limitNum || 10000, 0);
+    const items = [...pages, ...resources];
+
     if (!items || items.length === 0) {
       logger.warn('No crawl data found for export');
-      return res.status(404).json({ 
-        error: 'No crawl data found',
-        message: 'Please run a crawl first to generate data for export'
-      });
+      return res.status(404).json({ error: 'No crawl data found', message: 'Please run a crawl first to generate data for export' });
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `crawl-results-${timestamp}`;
 
     switch (format) {
-      case 'csv':
+      case 'csv': {
         const csv = convertToCSV(items);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
         res.send(csv);
         break;
-        
-      case 'txt':
+      }
+      case 'txt': {
         const txt = items.map((item: any) => item.url).join('\n');
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.txt"`);
         res.send(txt);
         break;
-        
-      case 'xml':
+      }
+      case 'xml': {
         const xml = convertToXML(items);
         res.setHeader('Content-Type', 'application/xml');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.xml"`);
         res.send(xml);
         break;
-        
+      }
       case 'json':
-      default:
+      default: {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
         res.json({
-          exportInfo: {
-            timestamp: new Date().toISOString(),
-            totalUrls: items.length,
-            format: 'json'
-          },
-          urls: items
+          exportInfo: { timestamp: new Date().toISOString(), totalUrls: items.length, format: 'json' },
+          urls: items,
         });
-        break;
+      }
     }
-    
-    logger.info(`Data exported`, { format, count: items.length });
+
+    logger.info('Data exported', { format, count: items.length });
   } catch (error) {
     logger.error('Failed to export data', error as Error);
     res.status(500).json({ error: 'Failed to export data' });
@@ -218,18 +179,15 @@ router.get('/export/metrics', async (req, res) => {
     const metrics = metricsCollector.getMetrics();
     const requestHistory = metricsCollector.getRequestHistory();
     const errorSummary = metricsCollector.getErrorSummary();
-    
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `crawl-metrics-${timestamp}`;
-    
+
     const exportData = {
-      exportInfo: {
-        timestamp: new Date().toISOString(),
-        format: format as string
-      },
+      exportInfo: { timestamp: new Date().toISOString(), format: format as string },
       metrics,
       requestHistory,
-      errorSummary
+      errorSummary,
     };
 
     if (format === 'csv') {
@@ -242,8 +200,8 @@ router.get('/export/metrics', async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
       res.json(exportData);
     }
-    
-    logger.info(`Metrics exported`, { format });
+
+    logger.info('Metrics exported', { format });
   } catch (error) {
     logger.error('Failed to export metrics', error as Error);
     res.status(500).json({ error: 'Failed to export metrics' });
@@ -253,165 +211,143 @@ router.get('/export/metrics', async (req, res) => {
 // Helper functions
 function convertToCSV(items: any[]): string {
   if (items.length === 0) return '';
-  
   const headers = Object.keys(items[0]);
   const csvHeaders = headers.join(',');
-  
-  const csvRows = items.map(item => 
-    headers.map(header => {
-      const value = item[header];
-      // Escape commas and quotes in CSV
-      if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-        return `"${value.replace(/"/g, '""')}"`;
-      }
-      return value;
-    }).join(',')
-  );
-  
+  const csvRows = items.map(item => headers.map(header => {
+    const value = item[header];
+    if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  }).join(','));
   return [csvHeaders, ...csvRows].join('\n');
 }
 
 function convertToXML(items: any[]): string {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<crawlResults>\n';
-  xml += `  <exportInfo>\n`;
+  xml += '  <exportInfo>\n';
   xml += `    <timestamp>${new Date().toISOString()}</timestamp>\n`;
   xml += `    <totalUrls>${items.length}</totalUrls>\n`;
-  xml += `  </exportInfo>\n`;
-  xml += `  <urls>\n`;
-  
+  xml += '  </exportInfo>\n';
+  xml += '  <urls>\n';
   items.forEach((item, index) => {
     xml += `    <url id="${index + 1}">\n`;
     xml += `      <value><![CDATA[${item.url}]]></value>\n`;
-    xml += `    </url>\n`;
+    xml += '    </url>\n';
   });
-  
-  xml += `  </urls>\n`;
-  xml += `</crawlResults>`;
-  
+  xml += '  </urls>\n';
+  xml += '</crawlResults>';
   return xml;
 }
 
 function convertMetricsToCSV(data: any): string {
-  const lines = [];
-  
-  // Export info
+  const lines: string[] = [];
   lines.push('Section,Field,Value');
   lines.push(`Export Info,Timestamp,${data.exportInfo.timestamp}`);
   lines.push(`Export Info,Format,${data.exportInfo.format}`);
-  
-  // Metrics
   lines.push('Metrics,Total Pages,' + data.metrics.totalPages);
   lines.push('Metrics,Successful Requests,' + data.metrics.successfulRequests);
   lines.push('Metrics,Failed Requests,' + data.metrics.failedRequests);
   lines.push('Metrics,Average Response Time,' + data.metrics.averageResponseTime);
   lines.push('Metrics,Requests Per Minute,' + data.metrics.requestsPerMinute);
   lines.push('Metrics,Duration,' + data.metrics.duration);
-  
-  // Error summary
   data.errorSummary.forEach((error: any) => {
     lines.push(`Error,${error.type},${error.count} (${error.percentage}%)`);
   });
-  
   return lines.join('\n');
 }
 
-// Check data availability
+// Check data availability (DB only)
 router.get('/data/check', async (req, res) => {
   try {
-    const dataset = await Dataset.open();
-    const data = await dataset.getData({ limit: 1 });
-    
+    const db = getDatabase();
+    const totalPages = db.getPageCount();
+    const totalResources = db.getResourceCount();
+    const totalItems = totalPages + totalResources;
     res.json({
-      hasData: !!(data && data.items && data.items.length > 0),
-      itemCount: data?.items?.length || 0,
-      totalItems: data?.total || 0,
-      message: data && data.items && data.items.length > 0 
-        ? 'Data available for export' 
+      hasData: totalItems > 0,
+      itemCount: totalItems,
+      totalItems,
+      totalPages,
+      totalResources,
+      message: totalItems > 0
+        ? `Database contains ${totalItems} items (${totalPages} pages, ${totalResources} resources)`
         : 'No data available - run a crawl first'
     });
   } catch (error) {
     logger.error('Failed to check data availability', error as Error);
-    res.status(500).json({ 
-      hasData: false,
-      error: 'Failed to check data availability'
-    });
+    res.status(500).json({ hasData: false, error: 'Failed to check data availability' });
   }
 });
 
-// List all datasets (for debugging)
+// List all data (pages and resources)
 router.get('/data/list', async (req, res) => {
   try {
-    const dataset = await Dataset.open();
+    const db = getDatabase();
     const limit = Math.min(parseInt(req.query.limit as string) || 1000, 5000);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const sessionId = req.query.sessionId ? parseInt(req.query.sessionId as string) : undefined;
 
-    const data = await dataset.getData({ limit, offset });
+    // Tag pages so the UI can distinguish them from resources
+    const pages = db.getPages(sessionId, limit, offset).map((p: any) => ({ ...p, resourceType: 'page' }));
+    const resources = db.getResources(sessionId, undefined, limit, offset);
+    const allData = [...pages, ...resources].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const totalPages = db.getPageCount(sessionId);
+    const totalResources = db.getResourceCount(sessionId);
+    const totalItems = totalPages + totalResources;
 
     res.json({
-      data: data?.items || [],
+      data: allData,
       paging: {
         limit,
         offset,
-        count: data?.items?.length || 0,
-        total: data?.total || 0,
-        hasMore: typeof data?.total === 'number' ? offset + (data?.items?.length || 0) < (data.total as number) : false,
+        count: allData.length,
+        total: totalItems,
+        hasMore: offset + allData.length < totalItems,
       },
       datasetInfo: {
-        name: 'default',
-        itemCount: data?.items?.length || 0,
-        totalItems: data?.total || 0,
-        hasData: !!(data && data.items && data.items.length > 0)
+        name: 'database',
+        itemCount: allData.length,
+        totalItems,
+        totalPages,
+        totalResources,
+        hasData: totalItems > 0,
       },
-      message: data && data.items && data.items.length > 0 
-        ? 'Dataset contains data' 
-        : 'Dataset is empty - run a crawl first'
+      message: totalItems > 0
+        ? `Database contains ${totalItems} items (${totalPages} pages, ${totalResources} resources)`
+        : 'Database is empty - run a crawl first',
     });
   } catch (error) {
-    logger.error('Failed to list dataset data', error as Error);
-    res.status(500).json({ 
-      error: 'Failed to list dataset data',
-      details: (error as Error).message
-    });
+    logger.error('Failed to list database data', error as Error);
+    res.status(500).json({ error: 'Failed to retrieve data', details: (error as Error).message });
   }
 });
 
 // Clear all data endpoint
 router.delete('/data/clear', async (req, res) => {
   try {
-    // Clear the dataset (use default dataset)
-    const dataset = await Dataset.open();
-    await dataset.drop();
-    
-    // Clear the request queue to allow re-crawling same URLs
+    const db = getDatabase();
+    db.clearAllData();
+
     const requestQueue = await RequestQueue.open();
     const queueInfo = await requestQueue.getInfo();
-    logger.info('Clearing request queue', { 
-      queueName: queueInfo?.name, 
+    logger.info('Clearing request queue', {
+      queueName: queueInfo?.name,
       pendingCount: queueInfo?.pendingRequestCount,
-      handledCount: queueInfo?.handledRequestCount 
+      handledCount: queueInfo?.handledRequestCount,
     });
     await requestQueue.drop();
-    
-    // Reset metrics
+
     metricsCollector.reset();
-    
-    // Clear logs
     logger.clearLogs();
-    
-    res.json({ 
-      message: 'All data cleared successfully (dataset, queue, metrics, and logs)',
-      timestamp: new Date().toISOString()
-    });
-    
+
+    res.json({ message: 'All data cleared successfully (database, queue, metrics, and logs)', timestamp: new Date().toISOString() });
     logger.info('All data cleared by user request');
   } catch (error) {
     logger.error('Failed to clear data', error as Error);
-    res.status(500).json({ 
-      error: 'Failed to clear data',
-      details: (error as Error).message,
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ error: 'Failed to clear data', details: (error as Error).message, timestamp: new Date().toISOString() });
   }
 });
 
@@ -420,24 +356,20 @@ router.get('/status', (req, res) => {
   try {
     const isHealthy = healthChecker.isHealthy();
     const metrics = metricsCollector.getMetrics();
-    
     res.json({
       healthy: isHealthy,
       activeCrawls: metrics.totalPages > 0,
       totalPages: metrics.totalPages,
-      successRate: metrics.totalPages > 0 ? 
-        Math.round((metrics.successfulRequests / metrics.totalPages) * 100) : 0,
+      successRate: metrics.totalPages > 0 ? Math.round((metrics.successfulRequests / metrics.totalPages) * 100) : 0,
       uptime: process.uptime(),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     logger.error('Failed to get status', error as Error);
-    res.status(500).json({ 
-      healthy: false, 
-      error: 'Status check failed',
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ healthy: false, error: 'Status check failed', timestamp: new Date().toISOString() });
   }
 });
 
 export { router as monitoringRoutes, healthChecker, metricsCollector };
+
+

@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { Dataset } from 'crawlee';
 import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { Logger } from './logging/Logger.js';
@@ -55,10 +54,26 @@ app.post('/crawl', async (req, res) => {
     const { url, allowSubdomains, maxConcurrency, mode } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
+    // Normalize and validate URL input
+    const normalizeUrlInput = (input: string): string => {
+        const trimmed = String(input).trim();
+        if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+        return trimmed;
+    };
+
+    const safeUrl = normalizeUrlInput(url);
+    try {
+        // Validate
+        // eslint-disable-next-line no-new
+        new URL(safeUrl);
+    } catch {
+        return res.status(400).json({ error: 'Invalid URL. Please include a valid domain (e.g. https://example.com)' });
+    }
+
     const requestId = `crawl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    logger.info('Crawl request received', { url, allowSubdomains, maxConcurrency, mode }, requestId);
+    logger.info('Crawl request received', { url: safeUrl, allowSubdomains, maxConcurrency, mode }, requestId);
     
-    res.json({ ok: true, requestId });
+    res.json({ ok: true, requestId, url: safeUrl });
 
     // Update health checker
     healthChecker.recordCrawlStart();
@@ -71,7 +86,7 @@ app.post('/crawl', async (req, res) => {
         
         try {
             await runCrawl({
-                startUrl: url,
+                startUrl: safeUrl,
                 allowSubdomains: Boolean(allowSubdomains),
                 maxConcurrency: Number(maxConcurrency) || 150,
                 perHostDelayMs: Number(process.env.CRAWL_PER_HOST_DELAY_MS) || 150,
@@ -90,8 +105,6 @@ app.post('/crawl', async (req, res) => {
                     logger.debug('Page discovered', { url: urlFound }, requestId);
                 },
                 onDone: async (count) => {
-                    // Use Crawlee's built-in statistics
-                    const stats = await Dataset.getData();
                     const duration = Date.now() - startTime;
                     const durationSeconds = Math.max(1, Math.floor(duration / 1000));
                     const pagesPerSecond = parseFloat((count / (duration / 1000)).toFixed(2));

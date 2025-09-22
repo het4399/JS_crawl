@@ -1,7 +1,8 @@
-import { CheerioCrawler, Dataset, log, RequestQueue, PlaywrightCrawler } from 'crawlee';
+import { CheerioCrawler, log, RequestQueue, PlaywrightCrawler } from 'crawlee';
 import { canonicalizeUrl, isSameSite } from './utils/url.js';
 import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
+import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 
 type CrawlOptions = {
     startUrl: string;
@@ -22,6 +23,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html' } = options;
     const { onLog, onPage, onDone } = events;
     const logger = Logger.getInstance();
+    const db = getDatabase();
 
     const start = new URL(startUrl);
     const allowedHost = start.hostname;
@@ -29,6 +31,19 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
     log.info(startMsg);
     onLog?.(startMsg);
+
+    // Create crawl session
+    const sessionId = db.createCrawlSession({
+        startUrl,
+        allowSubdomains,
+        maxConcurrency,
+        mode,
+        startedAt: new Date().toISOString(),
+        totalPages: 0,
+        totalResources: 0,
+        duration: 0,
+        status: 'running'
+    });
 
     const queue = await RequestQueue.open();
 
@@ -60,7 +75,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 onLog?.(errorMsg);
                 
                 // Store failed request data
-                const failedPageData = {
+                db.insertPage({
+                    sessionId,
                     url,
                     title: 'Request Failed',
                     description: `HTTP ${response.statusCode} Error`,
@@ -69,10 +85,10 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     statusCode: response.statusCode,
                     responseTime: 0,
                     timestamp: new Date().toISOString(),
-                    success: false
-                };
+                    success: false,
+                    errorMessage: `HTTP ${response.statusCode} Error`
+                });
                 
-                await Dataset.pushData(failedPageData);
                 onPage?.(url);
                 return;
             }
@@ -81,20 +97,26 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             const startTime = requestStartTimes.get(url) || Date.now();
             const responseTime = Date.now() - startTime;
 
+            // Determine content type with fallbacks
+            const headerContentType = response?.headers?.['content-type'] || response?.responseHeaders?.['content-type'];
+            const metaContentType = $('meta[http-equiv="Content-Type"]').attr('content');
+            const resolvedContentType = headerContentType || metaContentType || 'text/html';
+
             // Record the page data
-            const pageData = {
+            const pageId = db.insertPage({
+                sessionId,
                 url,
                 title: $('title').text().trim() || 'No title',
                 description: $('meta[name="description"]').attr('content') || 'No description',
-                contentType: response?.headers?.['content-type'] || response?.responseHeaders?.['content-type'] || 'text/html',
+                contentType: resolvedContentType,
                 lastModified: response?.headers?.['last-modified'] || response?.responseHeaders?.['last-modified'] || null,
                 statusCode: response?.statusCode || 200,
                 responseTime: responseTime,
                 timestamp: new Date().toISOString(),
-                success: true
-            };
+                success: true,
+                errorMessage: null
+            });
             
-            await Dataset.pushData(pageData);
             onPage?.(url);
             
             // Record successful request in metrics
@@ -156,17 +178,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedCss.has(absolute)) {
                     emittedCss.add(absolute);
-                    Dataset.pushData({
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
                         url: absolute,
                         resourceType: 'css',
                         title: '',
                         description: 'CSS file',
                         contentType: 'text/css',
-                        lastModified: null,
-                        statusCode: 200,
-                        responseTime: 0,
-                        timestamp: new Date().toISOString(),
-                        success: true,
+                        timestamp: new Date().toISOString()
                     });
                 }
             });
@@ -185,17 +205,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedJs.has(absolute)) {
                     emittedJs.add(absolute);
-                    Dataset.pushData({
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
                         url: absolute,
                         resourceType: 'js',
                         title: '',
                         description: 'JavaScript file',
                         contentType: 'application/javascript',
-                        lastModified: null,
-                        statusCode: 200,
-                        responseTime: 0,
-                        timestamp: new Date().toISOString(),
-                        success: true,
+                        timestamp: new Date().toISOString()
                     });
                 }
             });
@@ -214,17 +232,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedImg.has(absolute)) {
                     emittedImg.add(absolute);
-                    Dataset.pushData({
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
                         url: absolute,
                         resourceType: 'image',
                         title: $(el).attr('alt') || '',
                         description: 'Image',
                         contentType: 'image/*',
-                        lastModified: null,
-                        statusCode: 200,
-                        responseTime: 0,
-                        timestamp: new Date().toISOString(),
-                        success: true,
+                        timestamp: new Date().toISOString()
                     });
                 }
             });
@@ -245,17 +261,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
                     if (!emittedExternal.has(absolute)) {
                         emittedExternal.add(absolute);
-                        Dataset.pushData({
+                        db.insertResource({
+                            sessionId,
+                            pageId: pageId,
                             url: absolute,
                             resourceType: 'external',
                             title: '',
                             description: 'External link',
                             contentType: 'text/html',
-                            lastModified: null,
-                            statusCode: 0,
-                            responseTime: 0,
-                            timestamp: new Date().toISOString(),
-                            success: true,
+                            timestamp: new Date().toISOString()
                         });
                     }
                 }
@@ -271,7 +285,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             const responseTime = Date.now() - startTime;
             
             // Store failed request data
-            const failedPageData = {
+            db.insertPage({
+                sessionId,
                 url: request.url,
                 title: 'Request Failed',
                 description: `Error: ${(error as Error).message}`,
@@ -280,10 +295,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 statusCode: 0,
                 responseTime: responseTime,
                 timestamp: new Date().toISOString(),
-                success: false
-            };
-            
-            await Dataset.pushData(failedPageData);
+                success: false,
+                errorMessage: (error as Error).message
+            });
             
             // Record failed request in metrics
             if (metricsCollector) {
@@ -300,14 +314,33 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         },
     });
 
+    // Track main document response info for Playwright
+    const mainDocInfo = new Map<string, { status: number; contentType?: string }>();
+
     // Optional Playwright crawler for JS-rendered pages
     const jsFallbackUrls: Set<string> = new Set();
     const playwrightCrawler = new PlaywrightCrawler({
         maxConcurrency: Math.max(1, Math.floor(maxConcurrency / 5)),
         requestHandlerTimeoutSecs: 90,
         preNavigationHooks: [
-            async ({ request }) => {
+            async ({ request, page }) => {
                 requestStartTimes.set(request.url, Date.now());
+                const targetUrl = request.url;
+                const listener = async (resp: any) => {
+                    try {
+                        if (resp.url() === targetUrl) {
+                            const status = resp.status();
+                            const headers = await resp.headers().catch(() => ({} as any));
+                            const contentType = headers?.['content-type'];
+                            mainDocInfo.set(targetUrl, { status, contentType });
+                        }
+                    } catch {}
+                };
+                page.on('response', listener);
+                // Remove listener after some time to avoid leaks
+                setTimeout(() => {
+                    try { page.off('response', listener); } catch {}
+                }, 15000);
             }
         ],
         requestHandler: async ({ request, page, enqueueLinks, log: reqLog }) => {
@@ -322,22 +355,154 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             // Extract page data
             const title = await page.title() || 'No title';
             const description = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => 'No description') || 'No description';
-            
-            const pageData = {
+            // Use captured main document response info if available
+            let mainStatus: number | undefined = mainDocInfo.get(url)?.status;
+            let mainContentType: string | undefined = mainDocInfo.get(url)?.contentType;
+            // Additional fallbacks for content type
+            const docContentType = await page.evaluate(() => document.contentType).catch(() => undefined);
+            const metaHttpEquiv = await page.$eval('meta[http-equiv="Content-Type"]', el => el.getAttribute('content')).catch(() => undefined);
+            const resolvedJsContentType = mainContentType || docContentType || metaHttpEquiv || 'text/html';
+            const resolvedJsStatus = typeof mainStatus === 'number' && mainStatus > 0 ? mainStatus : 200;
+
+            const pageId = db.insertPage({
+                sessionId,
                 url,
                 title,
                 description,
-                contentType: 'text/html',
+                contentType: resolvedJsContentType,
                 lastModified: null,
-                statusCode: 200,
+                statusCode: resolvedJsStatus,
                 responseTime: responseTime,
                 timestamp: new Date().toISOString(),
-                success: true
-            };
+                success: true,
+                errorMessage: null
+            });
             
             onLog?.(`JS-rendered: ${url}`);
-            await Dataset.pushData(pageData);
             onPage?.(url);
+
+            // Extract CSS files
+            const cssLinks = await page.$$eval('link[rel="stylesheet"][href]', (links) => 
+                links.map(link => link.getAttribute('href')).filter(Boolean)
+            );
+            
+            for (const href of cssLinks) {
+                if (!href) continue;
+                let absolute: string;
+                try {
+                    absolute = new URL(href, url).toString();
+                } catch {
+                    continue;
+                }
+                
+                if (!emittedCss.has(absolute)) {
+                    emittedCss.add(absolute);
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
+                        url: absolute,
+                        resourceType: 'css',
+                        title: '',
+                        description: 'CSS file',
+                        contentType: 'text/css',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Extract JS files
+            const jsScripts = await page.$$eval('script[src]', (scripts) => 
+                scripts.map(script => script.getAttribute('src')).filter(Boolean)
+            );
+            
+            for (const src of jsScripts) {
+                if (!src) continue;
+                let absolute: string;
+                try {
+                    absolute = new URL(src, url).toString();
+                } catch {
+                    continue;
+                }
+                
+                if (!emittedJs.has(absolute)) {
+                    emittedJs.add(absolute);
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
+                        url: absolute,
+                        resourceType: 'js',
+                        title: '',
+                        description: 'JavaScript file',
+                        contentType: 'application/javascript',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Extract images
+            const images = await page.$$eval('img[src]', (imgs) => 
+                imgs.map(img => ({
+                    src: img.getAttribute('src'),
+                    alt: img.getAttribute('alt') || ''
+                })).filter(img => img.src)
+            );
+            
+            for (const img of images) {
+                if (!img.src) continue;
+                let absolute: string;
+                try {
+                    absolute = new URL(img.src, url).toString();
+                } catch {
+                    continue;
+                }
+                
+                if (!emittedImg.has(absolute)) {
+                    emittedImg.add(absolute);
+                    db.insertResource({
+                        sessionId,
+                        pageId: pageId,
+                        url: absolute,
+                        resourceType: 'image',
+                        title: img.alt,
+                        description: 'Image',
+                        contentType: 'image/*',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Extract external links
+            const links = await page.$$eval('a[href]', (anchors) => 
+                anchors.map(anchor => anchor.getAttribute('href')).filter(Boolean)
+            );
+            
+            for (const href of links) {
+                if (!href) continue;
+                let absolute: string;
+                try {
+                    absolute = new URL(href, url).toString();
+                } catch {
+                    continue;
+                }
+                
+                // Check if it's external
+                if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
+                    if (!emittedExternal.has(absolute)) {
+                        emittedExternal.add(absolute);
+                        db.insertResource({
+                            sessionId,
+                            pageId: pageId,
+                            url: absolute,
+                            resourceType: 'external',
+                            title: '',
+                            description: 'External link',
+                            contentType: 'text/html',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
+            }
+            
             await enqueueLinks({
                 strategy: 'same-domain',
                 transformRequestFunction: (req) => {
@@ -359,7 +524,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             const responseTime = Date.now() - startTime;
             
             // Store failed request data
-            const failedPageData = {
+            db.insertPage({
+                sessionId,
                 url: request.url,
                 title: 'JS Request Failed',
                 description: `Playwright Error: ${(error as Error).message}`,
@@ -368,10 +534,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 statusCode: 0,
                 responseTime: responseTime,
                 timestamp: new Date().toISOString(),
-                success: false
-            };
-            
-            await Dataset.pushData(failedPageData);
+                success: false,
+                errorMessage: (error as Error).message
+            });
             
             // Record failed request in metrics
             if (metricsCollector) {
@@ -405,11 +570,24 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         }
     }
 
-    const dataset = await Dataset.open();
-    const { itemCount } = await dataset.getInfo() ?? { itemCount: 0 };
+    // Update crawl session with final stats
+    const totalPages = db.getPageCount(sessionId);
+    const totalResources = db.getResourceCount(sessionId);
+    const endTime = Date.now();
+    const startTime = new Date(db.getCrawlSession(sessionId)?.startedAt || new Date()).getTime();
+    const duration = Math.floor((endTime - startTime) / 1000);
     
-    const doneMsg = `🎉 Crawl complete! Found ${itemCount} items`;
+    db.updateCrawlSession(sessionId, {
+        completedAt: new Date().toISOString(),
+        totalPages,
+        totalResources,
+        duration,
+        status: 'completed'
+    });
+    
+    const totalItems = totalPages + totalResources;
+    const doneMsg = `🎉 Crawl complete! Found ${totalItems} items (${totalPages} pages, ${totalResources} resources)`;
     log.info(doneMsg);
     onLog?.(doneMsg);
-    onDone?.(itemCount);
+    onDone?.(totalItems);
 }

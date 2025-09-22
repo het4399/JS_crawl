@@ -6,10 +6,35 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:3004',
-      '/crawl': 'http://localhost:3004',
-      '/events': 'http://localhost:3004',
-      '/queue': 'http://localhost:3004'
+      '/api': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        secure: false,
+        timeout: 60000,
+      },
+      '/crawl': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        secure: false,
+        timeout: 60000,
+      },
+      '/events': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        secure: false,
+        timeout: 60000,
+        ws: false,
+        headers: {
+          Connection: 'keep-alive',
+          Accept: 'text/event-stream'
+        },
+      },
+      '/queue': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        secure: false,
+        timeout: 60000,
+      }
     }
   },
   build: {
