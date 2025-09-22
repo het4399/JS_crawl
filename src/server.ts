@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { Dataset } from 'crawlee';
 import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { Logger } from './logging/Logger.js';
@@ -24,7 +25,11 @@ let nextClientId = 1;
 const clients: Client[] = [];
 
 function sendEvent(data: unknown, event: string = 'message') {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const jsonString = JSON.stringify(data);
+    const payload = `event: ${event}\ndata: ${jsonString}\n\n`;
+    console.log('sendEvent data:', data);
+    console.log('sendEvent jsonString:', jsonString);
+    console.log('sendEvent payload:', payload);
     for (const c of clients) {
         c.res.write(payload);
     }
@@ -84,13 +89,28 @@ app.post('/crawl', async (req, res) => {
                     sendEvent({ type: 'page', url: urlFound }, 'page');
                     logger.debug('Page discovered', { url: urlFound }, requestId);
                 },
-                onDone: (count) => {
+                onDone: async (count) => {
+                    // Use Crawlee's built-in statistics
+                    const stats = await Dataset.getData();
                     const duration = Date.now() - startTime;
-                    sendEvent({ type: 'done', count }, 'done');
+                    const durationSeconds = Math.max(1, Math.floor(duration / 1000));
+                    const pagesPerSecond = parseFloat((count / (duration / 1000)).toFixed(2));
+                    
+                    const eventData = { 
+                        type: 'done', 
+                        count: count, 
+                        duration: durationSeconds, 
+                        pagesPerSecond: pagesPerSecond
+                    };
+                    
+                    console.log('Sending done event:', eventData);
+                    console.log('Duration calculation:', { startTime, currentTime: Date.now(), duration, durationSeconds, pagesPerSecond });
+                    sendEvent(eventData, 'done');
+                    
                     logger.info('Crawl completed', { 
                         totalPages: count, 
                         duration: `${duration}ms`,
-                        pagesPerSecond: Math.round(count / (duration / 1000))
+                        pagesPerSecond: pagesPerSecond
                     }, requestId);
                     
                     // Update health checker

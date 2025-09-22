@@ -32,17 +32,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
 
     const queue = await RequestQueue.open();
 
-    // Always enqueue the start URL
-    await queue.addRequests([{ url: start.href }]);
-    
-    // Log queue info for debugging
-    const queueInfo = await queue.getInfo();
-    logger.info('Request queue info', { 
-      queueName: queueInfo?.name, 
-      pendingCount: queueInfo?.pendingRequestCount,
-      handledCount: queueInfo?.handledRequestCount 
-    });
-
     // Track request start times for response time calculation
     const requestStartTimes = new Map<string, number>();
 
@@ -50,15 +39,13 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const emittedCss = new Set<string>();
     const emittedJs = new Set<string>();
     const emittedImg = new Set<string>();
+    const emittedExternal = new Set<string>();
 
     const cheerioCrawler = new CheerioCrawler({
         requestQueue: queue,
         maxConcurrency,
-        // Limit per-host rate a bit for politeness
-        minConcurrency: Math.min(5, Math.max(1, Math.floor(maxConcurrency / 10))),
-        maxRequestRetries: 2,
-        requestHandlerTimeoutSecs: 60,
-        // Track request start time
+        requestHandlerTimeoutSecs: 45,
+        maxRequestRetries: 1,
         preNavigationHooks: [
             async ({ request }) => {
                 requestStartTimes.set(request.url, Date.now());
@@ -66,18 +53,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         ],
         requestHandler: async ({ request, $, enqueueLinks, log: reqLog, response }) => {
             const { url } = request;
-            
-            // Debug response object structure
-            logger.debug('Response object debug', { 
-                url, 
-                hasResponse: !!response,
-                responseType: typeof response,
-                responseKeys: response ? Object.keys(response) : [],
-                statusCode: response?.statusCode,
-                headers: response?.headers,
-                responseHeaders: response?.responseHeaders,
-                contentType: response?.headers?.['content-type'] || response?.responseHeaders?.['content-type']
-            });
             
             if (response?.statusCode && response.statusCode >= 400) {
                 const errorMsg = `Skipping ${url} due to status ${response.statusCode}`;
@@ -92,34 +67,20 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     contentType: response?.headers?.['content-type'] || response?.responseHeaders?.['content-type'] || 'Unknown',
                     lastModified: response?.headers?.['last-modified'] || response?.responseHeaders?.['last-modified'] || null,
                     statusCode: response.statusCode,
-                    responseTime: 0, // We can't measure response time for failed requests accurately
+                    responseTime: 0,
                     timestamp: new Date().toISOString(),
                     success: false
                 };
                 
                 await Dataset.pushData(failedPageData);
                 onPage?.(url);
-                
-                // Record failed request in metrics
-                if (metricsCollector) {
-                    metricsCollector.recordRequest({
-                        url,
-                        statusCode: response.statusCode,
-                        responseTime: 0,
-                        timestamp: new Date().toISOString(),
-                        success: false,
-                        error: `HTTP ${response.statusCode}`
-                    });
-                }
-                
-                logger.warn('Request failed', { url, statusCode: response.statusCode });
                 return;
             }
 
             // Calculate response time
             const startTime = requestStartTimes.get(url) || Date.now();
             const responseTime = Date.now() - startTime;
-            
+
             // Record the page data
             const pageData = {
                 url,
@@ -181,91 +142,124 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 });
             }
 
-            // Collect CSS/JS/images as separate resource rows (global dedup, no caps)
-
-            const abs = (href?: string) => {
-                if (!href) return null;
-                try { return new URL(href, url).toString(); } catch { return null; }
-            };
-
-            const cssSet = new Set<string>();
-            $('link[rel="stylesheet"][href]')
-              .each((_i, el) => {
-                  const u = abs($(el).attr('href'));
-                  if (u) cssSet.add(u);
-              });
-
-            const jsSet = new Set<string>();
-            $('script[src]')
-              .each((_i, el) => {
-                  const u = abs($(el).attr('src'));
-                  if (u) jsSet.add(u);
-              });
-
-            const imgSet = new Set<string>();
-            $('img[src]')
-              .each((_i, el) => {
-                  const u = abs($(el).attr('src'));
-                  if (u) imgSet.add(u);
-              });
-
-            const nowIso = new Date().toISOString();
-            for (const u of cssSet) {
-                if (!emittedCss.has(u)) {
-                    emittedCss.add(u);
-                    await Dataset.pushData({
-                        url: u,
+            // Collect CSS files
+            $('link[rel="stylesheet"][href]').each((_i, el) => {
+                const href = $(el).attr('href');
+                if (!href) return;
+                
+                let absolute: string;
+                try {
+                    absolute = new URL(href, url).toString();
+                } catch {
+                    return;
+                }
+                
+                if (!emittedCss.has(absolute)) {
+                    emittedCss.add(absolute);
+                    Dataset.pushData({
+                        url: absolute,
                         resourceType: 'css',
                         title: '',
-                        description: '',
+                        description: 'CSS file',
                         contentType: 'text/css',
                         lastModified: null,
-                        statusCode: 0,
+                        statusCode: 200,
                         responseTime: 0,
-                        timestamp: nowIso,
+                        timestamp: new Date().toISOString(),
                         success: true,
                     });
                 }
-            }
-            for (const u of jsSet) {
-                if (!emittedJs.has(u)) {
-                    emittedJs.add(u);
-                    await Dataset.pushData({
-                        url: u,
+            });
+
+            // Collect JS files
+            $('script[src]').each((_i, el) => {
+                const src = $(el).attr('src');
+                if (!src) return;
+                
+                let absolute: string;
+                try {
+                    absolute = new URL(src, url).toString();
+                } catch {
+                    return;
+                }
+                
+                if (!emittedJs.has(absolute)) {
+                    emittedJs.add(absolute);
+                    Dataset.pushData({
+                        url: absolute,
                         resourceType: 'js',
                         title: '',
-                        description: '',
+                        description: 'JavaScript file',
                         contentType: 'application/javascript',
                         lastModified: null,
-                        statusCode: 0,
+                        statusCode: 200,
                         responseTime: 0,
-                        timestamp: nowIso,
+                        timestamp: new Date().toISOString(),
                         success: true,
                     });
                 }
-            }
-            for (const u of imgSet) {
-                if (!emittedImg.has(u)) {
-                    emittedImg.add(u);
-                    await Dataset.pushData({
-                        url: u,
+            });
+
+            // Collect images
+            $('img[src]').each((_i, el) => {
+                const src = $(el).attr('src');
+                if (!src) return;
+                
+                let absolute: string;
+                try {
+                    absolute = new URL(src, url).toString();
+                } catch {
+                    return;
+                }
+                
+                if (!emittedImg.has(absolute)) {
+                    emittedImg.add(absolute);
+                    Dataset.pushData({
+                        url: absolute,
                         resourceType: 'image',
-                        title: '',
-                        description: '',
+                        title: $(el).attr('alt') || '',
+                        description: 'Image',
                         contentType: 'image/*',
                         lastModified: null,
-                        statusCode: 0,
+                        statusCode: 200,
                         responseTime: 0,
-                        timestamp: nowIso,
+                        timestamp: new Date().toISOString(),
                         success: true,
                     });
                 }
-            }
+            });
 
-            // In auto mode, if the page has very few links, try JS-rendered version via Playwright
-            if (mode === 'auto' && toEnqueue.length < 3) {
-                jsFallbackUrls.add(url);
-            }
+            // Collect external links
+            $('a[href]').each((_i, el) => {
+                const href = $(el).attr('href');
+                if (!href) return;
+                
+                let absolute: string;
+                try {
+                    absolute = new URL(href, url).toString();
+                } catch {
+                    return;
+                }
+                
+                // Check if it's external
+                if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
+                    if (!emittedExternal.has(absolute)) {
+                        emittedExternal.add(absolute);
+                        Dataset.pushData({
+                            url: absolute,
+                            resourceType: 'external',
+                            title: '',
+                            description: 'External link',
+                            contentType: 'text/html',
+                            lastModified: null,
+                            statusCode: 0,
+                            responseTime: 0,
+                            timestamp: new Date().toISOString(),
+                            success: true,
+                        });
+                    }
+                }
+            });
         },
         errorHandler: async ({ request, error }) => {
             const warn = `Request failed ${request.url}: ${(error as Error).message}`;
@@ -290,11 +284,20 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             };
             
             await Dataset.pushData(failedPageData);
+            
+            // Record failed request in metrics
+            if (metricsCollector) {
+                metricsCollector.recordRequest({
+                    url: request.url,
+                    statusCode: 0,
+                    responseTime: responseTime,
+                    timestamp: new Date().toISOString(),
+                    success: false,
+                    error: (error as Error).message
+                });
+            }
             onPage?.(request.url);
         },
-        // Block non-HTML via pre/post navigation hooks
-        // CheerioCrawler already fetches HTML only; still add a small delay between requests per host
-        // by using autoscaled concurrency and not hammering one host too hard.
     });
 
     // Optional Playwright crawler for JS-rendered pages
@@ -302,7 +305,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const playwrightCrawler = new PlaywrightCrawler({
         maxConcurrency: Math.max(1, Math.floor(maxConcurrency / 5)),
         requestHandlerTimeoutSecs: 90,
-        // Track request start time
         preNavigationHooks: [
             async ({ request }) => {
                 requestStartTimes.set(request.url, Date.now());
@@ -311,7 +313,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         requestHandler: async ({ request, page, enqueueLinks, log: reqLog }) => {
             const { url } = request;
             await page.waitForLoadState('domcontentloaded');
-            // Give some time for JS to render links
             await page.waitForTimeout(500);
             
             // Calculate response time
@@ -326,9 +327,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 url,
                 title,
                 description,
-                contentType: 'text/html', // Playwright typically handles HTML content
-                lastModified: null, // Playwright doesn't easily expose response headers
-                statusCode: 200, // Playwright doesn't easily expose status code
+                contentType: 'text/html',
+                lastModified: null,
+                statusCode: 200,
                 responseTime: responseTime,
                 timestamp: new Date().toISOString(),
                 success: true
@@ -347,36 +348,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     return req;
                 },
             });
-
-            // Collect resources on JS-rendered pages (global dedup, no caps)
-            const nowIso = new Date().toISOString();
-            const abs = (u: string) => {
-                try { return new URL(u, url).toString(); } catch { return null; }
-            };
-            const cssHrefs = await page.$$eval('link[rel="stylesheet"][href]', els => els.map(e => (e as HTMLLinkElement).href)).catch(() => [] as string[]);
-            const jsSrcs = await page.$$eval('script[src]', els => els.map(e => (e as HTMLScriptElement).src)).catch(() => [] as string[]);
-            const imgSrcs = await page.$$eval('img[src]', els => els.map(e => (e as HTMLImageElement).src)).catch(() => [] as string[]);
-            const cssSet = new Set(cssHrefs.map(abs).filter(Boolean) as string[]);
-            const jsSet = new Set(jsSrcs.map(abs).filter(Boolean) as string[]);
-            const imgSet = new Set(imgSrcs.map(abs).filter(Boolean) as string[]);
-            for (const u of cssSet) {
-                if (!emittedCss.has(u)) {
-                    emittedCss.add(u);
-                    await Dataset.pushData({ url: u, resourceType: 'css', title: '', description: '', contentType: 'text/css', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
-                }
-            }
-            for (const u of jsSet) {
-                if (!emittedJs.has(u)) {
-                    emittedJs.add(u);
-                    await Dataset.pushData({ url: u, resourceType: 'js', title: '', description: '', contentType: 'application/javascript', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
-                }
-            }
-            for (const u of imgSet) {
-                if (!emittedImg.has(u)) {
-                    emittedImg.add(u);
-                    await Dataset.pushData({ url: u, resourceType: 'image', title: '', description: '', contentType: 'image/*', lastModified: null, statusCode: 0, responseTime: 0, timestamp: nowIso, success: true });
-                }
-            }
         },
         errorHandler: async ({ request, error }) => {
             const warn = `Playwright failed ${request.url}: ${(error as Error).message}`;
@@ -401,6 +372,19 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             };
             
             await Dataset.pushData(failedPageData);
+            
+            // Record failed request in metrics
+            if (metricsCollector) {
+                metricsCollector.recordRequest({
+                    url: request.url,
+                    statusCode: 0,
+                    responseTime: responseTime,
+                    timestamp: new Date().toISOString(),
+                    success: false,
+                    error: (error as Error).message
+                });
+            }
+            
             onPage?.(request.url);
         },
         headless: true,
@@ -423,10 +407,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
 
     const dataset = await Dataset.open();
     const { itemCount } = await dataset.getInfo() ?? { itemCount: 0 };
-    const doneMsg = `Crawl complete. Pages discovered: ${itemCount}`;
+    
+    const doneMsg = `🎉 Crawl complete! Found ${itemCount} items`;
     log.info(doneMsg);
     onLog?.(doneMsg);
     onDone?.(itemCount);
 }
-
-
