@@ -39,6 +39,8 @@ export interface Resource {
     title: string;
     description: string;
     contentType: string;
+    statusCode?: number | null;
+    responseTime?: number | null;
     timestamp: string;
 }
 
@@ -100,11 +102,17 @@ export class DatabaseService {
                 title TEXT NOT NULL,
                 description TEXT NOT NULL,
                 content_type TEXT NOT NULL,
+                status_code INTEGER,
+                response_time INTEGER,
                 timestamp TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES crawl_sessions (id),
                 FOREIGN KEY (page_id) REFERENCES pages (id)
             )
         `);
+
+        // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
+        try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
+        try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
 
         // Create indexes for better performance
         this.db.exec(`
@@ -115,6 +123,7 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_resources_page_id ON resources (page_id);
             CREATE INDEX IF NOT EXISTS idx_resources_type ON resources (resource_type);
             CREATE INDEX IF NOT EXISTS idx_resources_url ON resources (url);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_session_url ON resources (session_id, url);
         `);
 
         this.logger.info('Database tables initialized');
@@ -229,8 +238,8 @@ export class DatabaseService {
     insertResource(data: Omit<Resource, 'id'>): number {
         const stmt = this.db.prepare(`
             INSERT INTO resources 
-            (session_id, page_id, url, resource_type, title, description, content_type, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (session_id, page_id, url, resource_type, title, description, content_type, status_code, response_time, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = stmt.run(
@@ -241,10 +250,40 @@ export class DatabaseService {
             data.title,
             data.description,
             data.contentType,
+            data.statusCode ?? null,
+            data.responseTime ?? null,
             data.timestamp
         );
         
         return result.lastInsertRowid as number;
+    }
+
+    upsertResource(data: Omit<Resource, 'id'>): void {
+        const stmt = this.db.prepare(`
+            INSERT INTO resources (session_id, page_id, url, resource_type, title, description, content_type, status_code, response_time, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, url) DO UPDATE SET
+                page_id=excluded.page_id,
+                resource_type=excluded.resource_type,
+                title=excluded.title,
+                description=excluded.description,
+                content_type=excluded.content_type,
+                status_code=excluded.status_code,
+                response_time=excluded.response_time,
+                timestamp=excluded.timestamp
+        `);
+        stmt.run(
+            data.sessionId,
+            data.pageId,
+            data.url,
+            data.resourceType,
+            data.title,
+            data.description,
+            data.contentType,
+            data.statusCode ?? null,
+            data.responseTime ?? null,
+            data.timestamp
+        );
     }
 
     // Query Methods
@@ -312,6 +351,8 @@ export class DatabaseService {
             title: row.title,
             description: row.description,
             contentType: row.content_type,
+            statusCode: row.status_code ?? null,
+            responseTime: row.response_time ?? null,
             timestamp: row.timestamp,
         })) as Resource[];
     }

@@ -14,13 +14,13 @@ const logger = Logger.getInstance();
 router.get('/health', (req, res) => {
   try {
     const healthStatus = healthChecker.getHealthStatus();
-    const statusCode = healthStatus.status === 'healthy' ? 200 :
+    const statusCode = healthStatus.status === 'healthy' ? 200 : 
                       healthStatus.status === 'degraded' ? 200 : 503;
     res.status(statusCode).json(healthStatus);
   } catch (error) {
     logger.error('Health check failed', error as Error);
-    res.status(500).json({
-      status: 'unhealthy',
+    res.status(500).json({ 
+      status: 'unhealthy', 
       error: 'Health check failed',
       timestamp: new Date().toISOString()
     });
@@ -116,14 +116,14 @@ router.get('/export', async (req, res) => {
   try {
     const { format = 'json', limit } = req.query;
     logger.info('Export request received', { format, limit });
-
+    
     const db = getDatabase();
     const limitNum = limit ? parseInt(limit as string) : undefined;
 
     const pages = db.getPages(undefined, limitNum || 10000, 0);
     const resources = db.getResources(undefined, undefined, limitNum || 10000, 0);
     const items = [...pages, ...resources];
-
+    
     if (!items || items.length === 0) {
       logger.warn('No crawl data found for export');
       return res.status(404).json({ error: 'No crawl data found', message: 'Please run a crawl first to generate data for export' });
@@ -179,10 +179,10 @@ router.get('/export/metrics', async (req, res) => {
     const metrics = metricsCollector.getMetrics();
     const requestHistory = metricsCollector.getRequestHistory();
     const errorSummary = metricsCollector.getErrorSummary();
-
+    
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `crawl-metrics-${timestamp}`;
-
+    
     const exportData = {
       exportInfo: { timestamp: new Date().toISOString(), format: format as string },
       metrics,
@@ -200,7 +200,7 @@ router.get('/export/metrics', async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
       res.json(exportData);
     }
-
+    
     logger.info('Metrics exported', { format });
   } catch (error) {
     logger.error('Failed to export metrics', error as Error);
@@ -214,11 +214,11 @@ function convertToCSV(items: any[]): string {
   const headers = Object.keys(items[0]);
   const csvHeaders = headers.join(',');
   const csvRows = items.map(item => headers.map(header => {
-    const value = item[header];
-    if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
+      const value = item[header];
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
   }).join(','));
   return [csvHeaders, ...csvRows].join('\n');
 }
@@ -330,19 +330,19 @@ router.delete('/data/clear', async (req, res) => {
   try {
     const db = getDatabase();
     db.clearAllData();
-
+    
     const requestQueue = await RequestQueue.open();
     const queueInfo = await requestQueue.getInfo();
-    logger.info('Clearing request queue', {
-      queueName: queueInfo?.name,
+    logger.info('Clearing request queue', { 
+      queueName: queueInfo?.name, 
       pendingCount: queueInfo?.pendingRequestCount,
       handledCount: queueInfo?.handledRequestCount,
     });
     await requestQueue.drop();
-
+    
     metricsCollector.reset();
     logger.clearLogs();
-
+    
     res.json({ message: 'All data cleared successfully (database, queue, metrics, and logs)', timestamp: new Date().toISOString() });
     logger.info('All data cleared by user request');
   } catch (error) {

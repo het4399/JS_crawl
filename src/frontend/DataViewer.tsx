@@ -7,10 +7,10 @@ interface CrawlData {
   description: string;
   contentType: string;
   lastModified: string | null;
-  statusCode: number;
-  responseTime: number;
+  statusCode: number | null;
+  responseTime: number | null;
   timestamp: string;
-  success: boolean;
+  success?: boolean;
   resourceType?: string;
 }
 
@@ -142,7 +142,8 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
     return new Date(timestamp).toLocaleString();
   };
 
-  const formatResponseTime = (time: number) => {
+  const formatResponseTime = (time: number | null) => {
+    if (time === null || time === undefined) return 'Not available';
     return `${time}ms`;
   };
 
@@ -155,7 +156,10 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
     }
   };
 
-  const getStatusBadge = (statusCode: number) => {
+  const getStatusBadge = (statusCode: number | null) => {
+    if (statusCode === null || statusCode === undefined) {
+      return <span className="status-badge unknown">N/A</span>;
+    }
     if (statusCode >= 200 && statusCode < 300) {
       return <span className="status-badge success">{statusCode}</span>;
     } else if (statusCode >= 300 && statusCode < 400) {

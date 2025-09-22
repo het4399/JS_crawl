@@ -164,114 +164,97 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 });
             }
 
-            // Collect CSS files
+            // Collect CSS files (fast: no HEAD requests)
             $('link[rel="stylesheet"][href]').each((_i, el) => {
                 const href = $(el).attr('href');
                 if (!href) return;
-                
                 let absolute: string;
-                try {
-                    absolute = new URL(href, url).toString();
-                } catch {
-                    return;
-                }
-                
-                if (!emittedCss.has(absolute)) {
-                    emittedCss.add(absolute);
-                    db.insertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'css',
-                        title: '',
-                        description: 'CSS file',
-                        contentType: 'text/css',
-                        timestamp: new Date().toISOString()
-                    });
-                }
+                try { absolute = new URL(href, url).toString(); } catch { return; }
+                if (emittedCss.has(absolute)) return;
+                emittedCss.add(absolute);
+                db.upsertResource({
+                    sessionId,
+                    pageId: pageId,
+                    url: absolute,
+                    resourceType: 'css',
+                    title: '',
+                    description: 'CSS file',
+                    contentType: 'text/css',
+                    statusCode: null,
+                    responseTime: null,
+                    timestamp: new Date().toISOString()
+                });
             });
 
             // Collect JS files
+            // Collect JS files (fast)
             $('script[src]').each((_i, el) => {
                 const src = $(el).attr('src');
                 if (!src) return;
-                
                 let absolute: string;
-                try {
-                    absolute = new URL(src, url).toString();
-                } catch {
-                    return;
-                }
-                
-                if (!emittedJs.has(absolute)) {
-                    emittedJs.add(absolute);
-                    db.insertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'js',
-                        title: '',
-                        description: 'JavaScript file',
-                        contentType: 'application/javascript',
-                        timestamp: new Date().toISOString()
-                    });
-                }
+                try { absolute = new URL(src, url).toString(); } catch { return; }
+                if (emittedJs.has(absolute)) return;
+                emittedJs.add(absolute);
+                db.upsertResource({
+                    sessionId,
+                    pageId: pageId,
+                    url: absolute,
+                    resourceType: 'js',
+                    title: '',
+                    description: 'JavaScript file',
+                    contentType: 'application/javascript',
+                    statusCode: null,
+                    responseTime: null,
+                    timestamp: new Date().toISOString()
+                });
             });
 
             // Collect images
+            // Collect images (fast)
             $('img[src]').each((_i, el) => {
                 const src = $(el).attr('src');
                 if (!src) return;
-                
+                const alt = $(el).attr('alt') || '';
                 let absolute: string;
-                try {
-                    absolute = new URL(src, url).toString();
-                } catch {
-                    return;
-                }
-                
-                if (!emittedImg.has(absolute)) {
-                    emittedImg.add(absolute);
-                    db.insertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'image',
-                        title: $(el).attr('alt') || '',
-                        description: 'Image',
-                        contentType: 'image/*',
-                        timestamp: new Date().toISOString()
-                    });
-                }
+                try { absolute = new URL(src, url).toString(); } catch { return; }
+                if (emittedImg.has(absolute)) return;
+                emittedImg.add(absolute);
+                db.upsertResource({
+                    sessionId,
+                    pageId: pageId,
+                    url: absolute,
+                    resourceType: 'image',
+                    title: alt,
+                    description: 'Image',
+                    contentType: 'image/*',
+                    statusCode: null,
+                    responseTime: null,
+                    timestamp: new Date().toISOString()
+                });
             });
 
             // Collect external links
+            // Collect external links (fast)
             $('a[href]').each((_i, el) => {
                 const href = $(el).attr('href');
                 if (!href) return;
-                
                 let absolute: string;
-                try {
-                    absolute = new URL(href, url).toString();
-                } catch {
-                    return;
-                }
-                
-                // Check if it's external
+                try { absolute = new URL(href, url).toString(); } catch { return; }
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
-                    if (!emittedExternal.has(absolute)) {
-                        emittedExternal.add(absolute);
-                        db.insertResource({
-                            sessionId,
-                            pageId: pageId,
-                            url: absolute,
-                            resourceType: 'external',
-                            title: '',
-                            description: 'External link',
-                            contentType: 'text/html',
-                            timestamp: new Date().toISOString()
-                        });
-                    }
+                    if (emittedExternal.has(absolute)) return;
+                    emittedExternal.add(absolute);
+                    db.upsertResource({
+                        sessionId,
+                        pageId: pageId,
+                        url: absolute,
+                        resourceType: 'external',
+                        title: '',
+                        description: 'External link',
+                        contentType: 'text/html',
+                        statusCode: null,
+                        responseTime: null,
+                        timestamp: new Date().toISOString()
+                    });
                 }
             });
         },
@@ -316,6 +299,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
 
     // Track main document response info for Playwright
     const mainDocInfo = new Map<string, { status: number; contentType?: string }>();
+    // Track subresource timings and headers
+    const resourceStarts = new Map<string, number>();
+    const resourceInfo = new Map<string, { status?: number; contentType?: string; start?: number; end?: number }>();
 
     // Optional Playwright crawler for JS-rendered pages
     const jsFallbackUrls: Set<string> = new Set();
@@ -326,21 +312,32 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             async ({ request, page }) => {
                 requestStartTimes.set(request.url, Date.now());
                 const targetUrl = request.url;
-                const listener = async (resp: any) => {
+
+                const onReq = (req: any) => {
+                    try { resourceStarts.set(req.url(), Date.now()); } catch {}
+                };
+                const onResp = async (resp: any) => {
                     try {
-                        if (resp.url() === targetUrl) {
-                            const status = resp.status();
-                            const headers = await resp.headers().catch(() => ({} as any));
-                            const contentType = headers?.['content-type'];
+                        const rurl = resp.url();
+                        const status = resp.status();
+                        const headers = await resp.headers().catch(() => ({} as any));
+                        const contentType = headers?.['content-type'];
+                        const end = Date.now();
+                        const start = resourceStarts.get(rurl);
+                        resourceInfo.set(rurl, { status, contentType, start, end });
+
+                        if (rurl === targetUrl) {
                             mainDocInfo.set(targetUrl, { status, contentType });
                         }
                     } catch {}
                 };
-                page.on('response', listener);
-                // Remove listener after some time to avoid leaks
+
+                page.on('request', onReq);
+                page.on('response', onResp);
                 setTimeout(() => {
-                    try { page.off('response', listener); } catch {}
-                }, 15000);
+                    try { page.off('request', onReq); } catch {}
+                    try { page.off('response', onResp); } catch {}
+                }, 20000);
             }
         ],
         requestHandler: async ({ request, page, enqueueLinks, log: reqLog }) => {
@@ -397,14 +394,18 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedCss.has(absolute)) {
                     emittedCss.add(absolute);
-                    db.insertResource({
+                    const info = resourceInfo.get(absolute);
+                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
+                    db.upsertResource({
                         sessionId,
                         pageId: pageId,
                         url: absolute,
                         resourceType: 'css',
                         title: '',
                         description: 'CSS file',
-                        contentType: 'text/css',
+                        contentType: info?.contentType || 'text/css',
+                        statusCode: info?.status ?? null,
+                        responseTime: rt,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -426,14 +427,18 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedJs.has(absolute)) {
                     emittedJs.add(absolute);
-                    db.insertResource({
+                    const info = resourceInfo.get(absolute);
+                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
+                    db.upsertResource({
                         sessionId,
                         pageId: pageId,
                         url: absolute,
                         resourceType: 'js',
                         title: '',
                         description: 'JavaScript file',
-                        contentType: 'application/javascript',
+                        contentType: info?.contentType || 'application/javascript',
+                        statusCode: info?.status ?? null,
+                        responseTime: rt,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -458,14 +463,18 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 
                 if (!emittedImg.has(absolute)) {
                     emittedImg.add(absolute);
-                    db.insertResource({
+                    const info = resourceInfo.get(absolute);
+                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
+                    db.upsertResource({
                         sessionId,
                         pageId: pageId,
                         url: absolute,
                         resourceType: 'image',
                         title: img.alt,
                         description: 'Image',
-                        contentType: 'image/*',
+                        contentType: info?.contentType || 'image/*',
+                        statusCode: info?.status ?? null,
+                        responseTime: rt,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -489,14 +498,18 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
                     if (!emittedExternal.has(absolute)) {
                         emittedExternal.add(absolute);
-                        db.insertResource({
+                        const info = resourceInfo.get(absolute);
+                        const rt = info?.start && info?.end ? (info.end - info.start) : null;
+                        db.upsertResource({
                             sessionId,
                             pageId: pageId,
                             url: absolute,
                             resourceType: 'external',
                             title: '',
                             description: 'External link',
-                            contentType: 'text/html',
+                            contentType: info?.contentType || 'text/html',
+                            statusCode: info?.status ?? null,
+                            responseTime: rt,
                             timestamp: new Date().toISOString()
                         });
                     }
