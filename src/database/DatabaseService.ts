@@ -337,6 +337,28 @@ export class DatabaseService {
         } as CrawlSession;
     }
 
+    // New helpers for status lookup by URL
+    getLatestSessionByUrl(startUrl: string): CrawlSession | null {
+        const stmt = this.db.prepare('SELECT * FROM crawl_sessions WHERE start_url = ? ORDER BY started_at DESC LIMIT 1');
+        const row = stmt.get(startUrl) as any;
+        if (!row) return null;
+        return { ...row, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
+    }
+
+    getRunningSessionByUrl(startUrl: string): CrawlSession | null {
+        const stmt = this.db.prepare("SELECT * FROM crawl_sessions WHERE start_url = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1");
+        const row = stmt.get(startUrl) as any;
+        if (!row) return null;
+        return { ...row, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
+    }
+
+    getAverageDurationForUrl(startUrl: string): number | null {
+        const stmt = this.db.prepare("SELECT AVG(duration) as avgDuration FROM crawl_sessions WHERE start_url = ? AND status = 'completed'");
+        const row = stmt.get(startUrl) as any;
+        if (!row || row.avgDuration == null) return null;
+        return Math.floor(row.avgDuration as number);
+    }
+
     // Page Methods
     insertPage(data: Omit<Page, 'id'>): number {
         const stmt = this.db.prepare(`

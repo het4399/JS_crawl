@@ -33,6 +33,12 @@ function App() {
     duration: number;
     pagesPerSecond: number;
   } | null>(null);
+  const [showReusePrompt, setShowReusePrompt] = useState(false);
+  const [recentStatus, setRecentStatus] = useState<null | {
+    running: { id: number; startedAt: string } | null;
+    latest: { id: number; status: string; startedAt: string; completedAt: string | null; totalPages: number; totalResources: number; duration: number | null } | null;
+    averageDurationSec: number | null;
+  }>(null);
   
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -104,6 +110,33 @@ function App() {
     } catch (error) {
       setLogs(prev => [...prev, `❌ Error: ${(error as Error).message}`]);
       setIsCrawling(false);
+    }
+  };
+
+  // Intercept manual start to check for recent results
+  const checkAndMaybePrompt = async () => {
+    if (!url.trim() || isCrawling) return;
+    try {
+      const res = await fetch(`/api/crawl/status?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        await startCrawl();
+        return;
+      }
+      const data = await res.json();
+      const latest = data.latest as any;
+      const running = data.running as any;
+      const avg = data.averageDurationSec as number | null;
+      const now = Date.now();
+      const completedAt = latest?.completedAt || latest?.completed_at;
+      const recent = completedAt ? (now - new Date(completedAt).getTime()) <= 30 * 60 * 1000 : false;
+      if (running || recent) {
+        setRecentStatus({ running, latest, averageDurationSec: avg });
+        setShowReusePrompt(true);
+      } else {
+        await startCrawl();
+      }
+    } catch {
+      await startCrawl();
     }
   };
 
@@ -229,7 +262,7 @@ function App() {
           </div>
 
           <button
-            onClick={startCrawl}
+            onClick={checkAndMaybePrompt}
             disabled={isCrawling}
             className="start-btn"
           >
@@ -302,6 +335,40 @@ function App() {
 
       {showDataViewer && (
         <DataViewer onClose={() => setShowDataViewer(false)} />
+      )}
+
+      {showReusePrompt && (
+        <div className="modal-overlay" onClick={() => setShowReusePrompt(false)}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="header"><h3>Recent crawl detected</h3></div>
+            <div className="body">
+              <div>
+                {recentStatus?.running ? (
+                  <>A crawl is currently running (started at {new Date(recentStatus.running.startedAt).toLocaleString()}).</>
+                ) : recentStatus?.latest ? (
+                  <>Last crawl finished at {new Date(recentStatus.latest.completedAt || recentStatus.latest.startedAt).toLocaleString()} and took ~{recentStatus.latest.duration ?? recentStatus.averageDurationSec ?? 0}s.</>
+                ) : null}
+              </div>
+              <div className="info-row">
+                {recentStatus?.latest && (
+                  <>
+                    <span className="chip info">🔗 {url}</span>
+                    <span className="chip success">✅ {recentStatus.latest.totalPages} pages</span>
+                    <span className="chip">📦 {recentStatus.latest.totalResources} resources</span>
+                  </>
+                )}
+                {recentStatus?.averageDurationSec != null && (
+                  <span className="chip warn">⏱ Avg ~{recentStatus.averageDurationSec}s</span>
+                )}
+              </div>
+            </div>
+            <div className="actions">
+              <button className="btn btn-secondary" onClick={() => setShowReusePrompt(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={async () => { setShowReusePrompt(false); setShowDataViewer(true); }}>📊 View Last Results</button>
+              <button className="btn" onClick={async () => { setShowReusePrompt(false); await startCrawl(); }}>🔁 Recrawl Now</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

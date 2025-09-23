@@ -250,6 +250,94 @@ body {
   min-height: 100vh;
 }
 
+/* Reuse/recrawl confirmation modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.confirm-modal {
+  width: min(560px, 96vw);
+  max-height: 92vh;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.confirm-modal .header {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  color: #fff;
+}
+
+.confirm-modal .header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.confirm-modal .body {
+  padding: 16px 20px 8px 20px;
+  color: #111827;
+}
+
+.confirm-modal .info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip.success { background: #ecfdf5; color: #065f46; }
+.chip.warn { background: #fff7ed; color: #92400e; }
+.chip.info { background: #eff6ff; color: #1e3a8a; }
+
+.confirm-modal .actions {
+  padding: 12px 20px 20px 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
 .tab-navigation {
   display: flex;
   gap: 10px;

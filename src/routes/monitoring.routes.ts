@@ -342,6 +342,37 @@ router.get('/data/list', async (req, res) => {
   }
 });
 
+// Crawl status for a URL (to inform user about reuse vs recrawl)
+router.get('/crawl/status', (req, res) => {
+  try {
+    const url = req.query.url as string;
+    if (!url) return res.status(400).json({ error: 'url query param is required' });
+
+    const db = getDatabase();
+    const running = db.getRunningSessionByUrl(url);
+    const latest = db.getLatestSessionByUrl(url);
+    const avgDuration = db.getAverageDurationForUrl(url);
+
+    res.json({
+      url,
+      running: running ? { id: running.id, startedAt: (running as any).started_at ?? running.startedAt } : null,
+      latest: latest ? {
+        id: latest.id,
+        status: latest.status,
+        startedAt: (latest as any).started_at ?? latest.startedAt,
+        completedAt: (latest as any).completed_at ?? latest.completedAt,
+        totalPages: latest.totalPages,
+        totalResources: latest.totalResources,
+        duration: latest.duration
+      } : null,
+      averageDurationSec: avgDuration,
+    });
+  } catch (error) {
+    logger.error('Failed to get crawl status', error as Error);
+    res.status(500).json({ error: 'Failed to get crawl status' });
+  }
+});
+
 // Clear all data endpoint
 router.delete('/data/clear', async (req, res) => {
   try {
