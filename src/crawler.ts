@@ -3,6 +3,7 @@ import { canonicalizeUrl, isSameSite } from './utils/url.js';
 import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
 import { getDatabase, DatabaseService } from './database/DatabaseService.js';
+import { SitemapService } from './sitemap/SitemapService.js';
 
 type CrawlOptions = {
     startUrl: string;
@@ -45,7 +46,72 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         status: 'running'
     });
 
+    // Discover sitemaps and add URLs to queue
+    const sitemapMsg = 'Discovering sitemaps...';
+    log.info(sitemapMsg);
+    onLog?.(sitemapMsg);
+
+    try {
+        const sitemapResult = await SitemapService.discoverSitemaps(startUrl);
+        
+        // Store sitemap discovery results
+        for (const sitemapUrl of sitemapResult.sitemapUrls) {
+            db.insertSitemapDiscovery({
+                sessionId,
+                sitemapUrl,
+                discoveredUrls: 0,
+                lastModified: new Date().toISOString(),
+                success: true,
+                errorMessage: null
+            });
+        }
+
+        // Store discovered URLs from sitemaps
+        for (const urlData of sitemapResult.discoveredUrls) {
+            db.insertSitemapUrl({
+                sessionId,
+                url: urlData.url,
+                lastModified: urlData.lastModified || null,
+                changeFrequency: urlData.changeFrequency || null,
+                priority: urlData.priority || null,
+                discoveredAt: new Date().toISOString(),
+                crawled: false
+            });
+        }
+
+        const discoveryMsg = `Discovered ${sitemapResult.discoveredUrls.length} URLs from ${sitemapResult.sitemapUrls.length} sitemaps`;
+        log.info(discoveryMsg);
+        onLog?.(discoveryMsg);
+
+        if (sitemapResult.errors.length > 0) {
+            const errorMsg = `Sitemap discovery errors: ${sitemapResult.errors.join(', ')}`;
+            onLog?.(errorMsg);
+        }
+    } catch (error) {
+        const errorMsg = `Sitemap discovery failed: ${error}`;
+        log.error(errorMsg);
+        onLog?.(errorMsg);
+    }
+
     const queue = await RequestQueue.open();
+
+    // Add discovered sitemap URLs to the queue
+    try {
+        const sitemapUrls = db.getUncrawledSitemapUrls(sessionId);
+        for (const urlData of sitemapUrls) {
+            await queue.addRequest({ url: urlData.url });
+        }
+        
+        if (sitemapUrls.length > 0) {
+            const queueMsg = `Added ${sitemapUrls.length} sitemap URLs to crawl queue`;
+            log.info(queueMsg);
+            onLog?.(queueMsg);
+        }
+    } catch (error) {
+        const errorMsg = `Failed to add sitemap URLs to queue: ${error}`;
+        log.error(errorMsg);
+        onLog?.(errorMsg);
+    }
 
     // Track request start times for response time calculation
     const requestStartTimes = new Map<string, number>();
@@ -116,6 +182,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 success: true,
                 errorMessage: null
             });
+            
+            // Mark sitemap URL as crawled if it was discovered from sitemap
+            db.markSitemapUrlAsCrawled(sessionId, url);
             
             onPage?.(url);
             

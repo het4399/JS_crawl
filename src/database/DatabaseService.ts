@@ -44,6 +44,27 @@ export interface Resource {
     timestamp: string;
 }
 
+export interface SitemapDiscovery {
+    id: number;
+    sessionId: number;
+    sitemapUrl: string;
+    discoveredUrls: number;
+    lastModified: string;
+    success: boolean;
+    errorMessage: string | null;
+}
+
+export interface SitemapUrl {
+    id: number;
+    sessionId: number;
+    url: string;
+    lastModified: string | null;
+    changeFrequency: string | null;
+    priority: string | null;
+    discoveredAt: string;
+    crawled: boolean;
+}
+
 export class DatabaseService {
     private db: Database.Database;
     private logger: Logger;
@@ -110,6 +131,35 @@ export class DatabaseService {
             )
         `);
 
+        // Create sitemap_discoveries table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS sitemap_discoveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                sitemap_url TEXT NOT NULL,
+                discovered_urls INTEGER NOT NULL,
+                last_modified TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                error_message TEXT,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id)
+            )
+        `);
+
+        // Create sitemap_urls table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS sitemap_urls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
+                last_modified TEXT,
+                change_frequency TEXT,
+                priority TEXT,
+                discovered_at TEXT NOT NULL,
+                crawled INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id)
+            )
+        `);
+
         // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
         try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
@@ -124,6 +174,10 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_resources_type ON resources (resource_type);
             CREATE INDEX IF NOT EXISTS idx_resources_url ON resources (url);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_session_url ON resources (session_id, url);
+            CREATE INDEX IF NOT EXISTS idx_sitemap_discoveries_session_id ON sitemap_discoveries (session_id);
+            CREATE INDEX IF NOT EXISTS idx_sitemap_urls_session_id ON sitemap_urls (session_id);
+            CREATE INDEX IF NOT EXISTS idx_sitemap_urls_url ON sitemap_urls (url);
+            CREATE INDEX IF NOT EXISTS idx_sitemap_urls_crawled ON sitemap_urls (crawled);
         `);
 
         this.logger.info('Database tables initialized');
@@ -470,6 +524,108 @@ export class DatabaseService {
         }
         
         return csvRows.join('\n');
+    }
+
+    // Sitemap Methods
+    insertSitemapDiscovery(data: Omit<SitemapDiscovery, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO sitemap_discoveries 
+            (session_id, sitemap_url, discovered_urls, last_modified, success, error_message)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.sessionId,
+            data.sitemapUrl,
+            data.discoveredUrls,
+            data.lastModified,
+            data.success ? 1 : 0,
+            data.errorMessage
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    insertSitemapUrl(data: Omit<SitemapUrl, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO sitemap_urls 
+            (session_id, url, last_modified, change_frequency, priority, discovered_at, crawled)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.sessionId,
+            data.url,
+            data.lastModified,
+            data.changeFrequency,
+            data.priority,
+            data.discoveredAt,
+            data.crawled ? 1 : 0
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    getSitemapUrls(sessionId: number): SitemapUrl[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM sitemap_urls WHERE session_id = ? ORDER BY discovered_at DESC
+        `);
+        
+        const rows = stmt.all(sessionId) as any[];
+        return rows.map(row => ({
+            id: row.id,
+            sessionId: row.session_id,
+            url: row.url,
+            lastModified: row.last_modified,
+            changeFrequency: row.change_frequency,
+            priority: row.priority,
+            discoveredAt: row.discovered_at,
+            crawled: row.crawled === 1
+        }));
+    }
+
+    getSitemapDiscoveries(sessionId: number): SitemapDiscovery[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM sitemap_discoveries WHERE session_id = ? ORDER BY last_modified DESC
+        `);
+        
+        const rows = stmt.all(sessionId) as any[];
+        return rows.map(row => ({
+            id: row.id,
+            sessionId: row.session_id,
+            sitemapUrl: row.sitemap_url,
+            discoveredUrls: row.discovered_urls,
+            lastModified: row.last_modified,
+            success: row.success === 1,
+            errorMessage: row.error_message
+        }));
+    }
+
+    markSitemapUrlAsCrawled(sessionId: number, url: string): void {
+        const stmt = this.db.prepare(`
+            UPDATE sitemap_urls SET crawled = 1 WHERE session_id = ? AND url = ?
+        `);
+        stmt.run(sessionId, url);
+    }
+
+    getUncrawledSitemapUrls(sessionId: number): SitemapUrl[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM sitemap_urls 
+            WHERE session_id = ? AND crawled = 0 
+            ORDER BY priority DESC, discovered_at ASC
+        `);
+        
+        const rows = stmt.all(sessionId) as any[];
+        return rows.map(row => ({
+            id: row.id,
+            sessionId: row.session_id,
+            url: row.url,
+            lastModified: row.last_modified,
+            changeFrequency: row.change_frequency,
+            priority: row.priority,
+            discoveredAt: row.discovered_at,
+            crawled: row.crawled === 1
+        }));
     }
 
     close(): void {

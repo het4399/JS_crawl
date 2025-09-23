@@ -292,6 +292,15 @@ router.get('/data/list', async (req, res) => {
     // Tag pages so the UI can distinguish them from resources
     const pages = db.getPages(sessionId, limit, offset).map((p: any) => ({ ...p, resourceType: 'page' }));
     const resources = db.getResources(sessionId, undefined, limit, offset);
+    
+    // Get sitemap data if sessionId is provided
+    let sitemapUrls: any[] = [];
+    let sitemapDiscoveries: any[] = [];
+    if (sessionId) {
+      sitemapUrls = db.getSitemapUrls(sessionId);
+      sitemapDiscoveries = db.getSitemapDiscoveries(sessionId);
+    }
+    
     const allData = [...pages, ...resources].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const totalPages = db.getPageCount(sessionId);
@@ -314,6 +323,14 @@ router.get('/data/list', async (req, res) => {
         totalPages,
         totalResources,
         hasData: totalItems > 0,
+      },
+      sitemapInfo: {
+        discoveredUrls: sitemapUrls.length,
+        sitemapCount: sitemapDiscoveries.length,
+        crawledUrls: sitemapUrls.filter((url: any) => url.crawled).length,
+        uncrawledUrls: sitemapUrls.filter((url: any) => !url.crawled).length,
+        sitemapUrls,
+        sitemapDiscoveries
       },
       message: totalItems > 0
         ? `Database contains ${totalItems} items (${totalPages} pages, ${totalResources} resources)`
