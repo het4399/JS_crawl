@@ -183,7 +183,7 @@ export class SchedulerService {
             // Update schedule statistics
             this.scheduleManager.updateSchedule(schedule.id, {
                 lastRun: new Date().toISOString(),
-                nextRun: nextRunString,
+                nextRun: nextRunString ?? undefined,
                 totalRuns: schedule.totalRuns + 1,
                 successfulRuns: schedule.successfulRuns + 1
             });
@@ -195,11 +195,13 @@ export class SchedulerService {
             });
             
         } catch (error) {
-            this.logger.error('Scheduled crawl failed', { 
-                scheduleId: schedule.id,
-                error: (error as Error).message,
-                stack: (error as Error).stack
-            });
+            this.logger.error(
+                'Scheduled crawl failed',
+                error as Error,
+                {
+                    scheduleId: schedule.id
+                }
+            );
             
             // Record execution as failed
             const duration = Date.now() - startTime;
@@ -225,7 +227,7 @@ export class SchedulerService {
             // Update schedule statistics
             this.scheduleManager.updateSchedule(schedule.id, {
                 lastRun: new Date().toISOString(),
-                nextRun: nextRunString,
+                nextRun: nextRunString ?? undefined,
                 totalRuns: schedule.totalRuns + 1,
                 failedRuns: schedule.failedRuns + 1
             });

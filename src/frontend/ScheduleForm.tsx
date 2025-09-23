@@ -346,7 +346,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({ schedule, onClose }) => {
                     <button 
                         type="submit" 
                         className="btn btn-primary"
-                        disabled={loading || (cronValidation && !cronValidation.isValid)}
+                        disabled={loading || Boolean(cronValidation && !cronValidation.isValid)}
                     >
                         <span className="btn-icon">
                             {loading ? '⏳' : (schedule ? '💾' : '✨')}

@@ -72,7 +72,7 @@ export interface CrawlSchedule {
     startUrl: string;
     allowSubdomains: boolean;
     maxConcurrency: number;
-    mode: string;
+    mode: 'html' | 'js' | 'auto';
     cronExpression: string;
     enabled: boolean;
     createdAt: string;

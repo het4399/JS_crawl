@@ -138,7 +138,7 @@ export class Logger {
       statusCode,
       responseTime: duration
     };
-    this.info(message, context, requestId, url, duration);
+    this.info(message, context, requestId, url);
   }
 
   getLogs(level?: string, limit: number = 100): LogEntry[] {

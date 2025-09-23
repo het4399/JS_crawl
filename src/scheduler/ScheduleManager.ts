@@ -61,7 +61,7 @@ export class ScheduleManager {
             enabled: data.enabled,
             createdAt: new Date().toISOString(),
             lastRun: data.lastRun,
-            nextRun: nextRun,
+            nextRun: nextRun ?? undefined,
             totalRuns: 0,
             successfulRuns: 0,
             failedRuns: 0
@@ -101,14 +101,17 @@ export class ScheduleManager {
                         });
                     }
                 } catch (error) {
-                    this.logger.error('Error converting next run date to ISO string', { 
-                        scheduleId: id, 
-                        cronExpression: updates.cronExpression,
-                        error: error as Error 
-                    });
+                    this.logger.error(
+                        'Error converting next run date to ISO string',
+                        error as Error,
+                        {
+                            scheduleId: id,
+                            cronExpression: updates.cronExpression
+                        }
+                    );
                 }
             }
-            updates.nextRun = nextRun;
+            updates.nextRun = nextRun ?? undefined;
         }
         
         this.db.updateCrawlSchedule(id, updates);
