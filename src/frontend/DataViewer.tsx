@@ -187,7 +187,9 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
       <div className="data-viewer">
         <div className="data-viewer-header">
           <h2>📊 Crawl Data Viewer</h2>
-          <button onClick={onClose} className="close-btn">✕</button>
+          <button onClick={onClose} className="close-btn" title="Close Data Viewer">
+            ×
+          </button>
         </div>
 
         <div className="data-viewer-controls">

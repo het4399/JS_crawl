@@ -65,6 +65,37 @@ export interface SitemapUrl {
     crawled: boolean;
 }
 
+export interface CrawlSchedule {
+    id: number;
+    name: string;
+    description: string;
+    startUrl: string;
+    allowSubdomains: boolean;
+    maxConcurrency: number;
+    mode: string;
+    cronExpression: string;
+    enabled: boolean;
+    createdAt: string;
+    lastRun?: string;
+    nextRun?: string;
+    totalRuns: number;
+    successfulRuns: number;
+    failedRuns: number;
+}
+
+export interface ScheduleExecution {
+    id: number;
+    scheduleId: number;
+    sessionId: number;
+    startedAt: string;
+    completedAt?: string;
+    status: 'running' | 'completed' | 'failed';
+    errorMessage?: string;
+    pagesCrawled: number;
+    resourcesFound: number;
+    duration: number;
+}
+
 export class DatabaseService {
     private db: Database.Database;
     private logger: Logger;
@@ -160,6 +191,45 @@ export class DatabaseService {
             )
         `);
 
+        // Create crawl_schedules table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS crawl_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                start_url TEXT NOT NULL,
+                allow_subdomains INTEGER NOT NULL,
+                max_concurrency INTEGER NOT NULL,
+                mode TEXT NOT NULL,
+                cron_expression TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_run TEXT,
+                next_run TEXT,
+                total_runs INTEGER DEFAULT 0,
+                successful_runs INTEGER DEFAULT 0,
+                failed_runs INTEGER DEFAULT 0
+            )
+        `);
+
+        // Create schedule_executions table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS schedule_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                schedule_id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                error_message TEXT,
+                pages_crawled INTEGER DEFAULT 0,
+                resources_found INTEGER DEFAULT 0,
+                duration INTEGER DEFAULT 0,
+                FOREIGN KEY (schedule_id) REFERENCES crawl_schedules (id),
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id)
+            )
+        `);
+
         // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
         try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
@@ -178,6 +248,9 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_sitemap_urls_session_id ON sitemap_urls (session_id);
             CREATE INDEX IF NOT EXISTS idx_sitemap_urls_url ON sitemap_urls (url);
             CREATE INDEX IF NOT EXISTS idx_sitemap_urls_crawled ON sitemap_urls (crawled);
+            CREATE INDEX IF NOT EXISTS idx_crawl_schedules_enabled ON crawl_schedules (enabled);
+            CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule_id ON schedule_executions (schedule_id);
+            CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions (status);
         `);
 
         this.logger.info('Database tables initialized');
@@ -476,13 +549,22 @@ export class DatabaseService {
 
     // Cleanup Methods
     clearAllData(): void {
+        // Delete in order to respect foreign key constraints
+        this.db.exec('DELETE FROM schedule_executions');
+        this.db.exec('DELETE FROM sitemap_urls');
+        this.db.exec('DELETE FROM sitemap_discoveries');
         this.db.exec('DELETE FROM resources');
         this.db.exec('DELETE FROM pages');
         this.db.exec('DELETE FROM crawl_sessions');
+        this.db.exec('DELETE FROM crawl_schedules');
         this.logger.info('All data cleared from database');
     }
 
     deleteCrawlSession(sessionId: number): void {
+        // Delete in order to respect foreign key constraints
+        this.db.prepare('DELETE FROM schedule_executions WHERE session_id = ?').run(sessionId);
+        this.db.prepare('DELETE FROM sitemap_urls WHERE session_id = ?').run(sessionId);
+        this.db.prepare('DELETE FROM sitemap_discoveries WHERE session_id = ?').run(sessionId);
         this.db.prepare('DELETE FROM resources WHERE session_id = ?').run(sessionId);
         this.db.prepare('DELETE FROM pages WHERE session_id = ?').run(sessionId);
         this.db.prepare('DELETE FROM crawl_sessions WHERE id = ?').run(sessionId);
@@ -625,6 +707,288 @@ export class DatabaseService {
             priority: row.priority,
             discoveredAt: row.discovered_at,
             crawled: row.crawled === 1
+        }));
+    }
+
+    // Schedule Methods
+    insertCrawlSchedule(data: Omit<CrawlSchedule, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO crawl_schedules 
+            (name, description, start_url, allow_subdomains, max_concurrency, mode, cron_expression, enabled, created_at, last_run, next_run, total_runs, successful_runs, failed_runs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.name,
+            data.description,
+            data.startUrl,
+            data.allowSubdomains ? 1 : 0,
+            data.maxConcurrency,
+            data.mode,
+            data.cronExpression,
+            data.enabled ? 1 : 0,
+            data.createdAt,
+            data.lastRun || null,
+            data.nextRun || null,
+            data.totalRuns,
+            data.successfulRuns,
+            data.failedRuns
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    updateCrawlSchedule(id: number, updates: Partial<CrawlSchedule>): void {
+        const fields = [];
+        const values = [];
+        
+        if (updates.name !== undefined) {
+            fields.push('name = ?');
+            values.push(updates.name);
+        }
+        if (updates.description !== undefined) {
+            fields.push('description = ?');
+            values.push(updates.description);
+        }
+        if (updates.startUrl !== undefined) {
+            fields.push('start_url = ?');
+            values.push(updates.startUrl);
+        }
+        if (updates.allowSubdomains !== undefined) {
+            fields.push('allow_subdomains = ?');
+            values.push(updates.allowSubdomains ? 1 : 0);
+        }
+        if (updates.maxConcurrency !== undefined) {
+            fields.push('max_concurrency = ?');
+            values.push(updates.maxConcurrency);
+        }
+        if (updates.mode !== undefined) {
+            fields.push('mode = ?');
+            values.push(updates.mode);
+        }
+        if (updates.cronExpression !== undefined) {
+            fields.push('cron_expression = ?');
+            values.push(updates.cronExpression);
+        }
+        if (updates.enabled !== undefined) {
+            fields.push('enabled = ?');
+            values.push(updates.enabled ? 1 : 0);
+        }
+        if (updates.lastRun !== undefined) {
+            fields.push('last_run = ?');
+            values.push(updates.lastRun);
+        }
+        if (updates.nextRun !== undefined) {
+            fields.push('next_run = ?');
+            values.push(updates.nextRun);
+        }
+        if (updates.totalRuns !== undefined) {
+            fields.push('total_runs = ?');
+            values.push(updates.totalRuns);
+        }
+        if (updates.successfulRuns !== undefined) {
+            fields.push('successful_runs = ?');
+            values.push(updates.successfulRuns);
+        }
+        if (updates.failedRuns !== undefined) {
+            fields.push('failed_runs = ?');
+            values.push(updates.failedRuns);
+        }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE crawl_schedules SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    deleteCrawlSchedule(id: number): void {
+        // First delete related executions
+        const deleteExecutionsStmt = this.db.prepare('DELETE FROM schedule_executions WHERE schedule_id = ?');
+        deleteExecutionsStmt.run(id);
+        
+        // Then delete the schedule
+        const stmt = this.db.prepare('DELETE FROM crawl_schedules WHERE id = ?');
+        stmt.run(id);
+    }
+
+    getCrawlSchedule(id: number): CrawlSchedule | null {
+        const stmt = this.db.prepare('SELECT * FROM crawl_schedules WHERE id = ?');
+        const row = stmt.get(id) as any;
+        
+        if (!row) return null;
+        
+        return {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: row.allow_subdomains === 1,
+            maxConcurrency: row.max_concurrency,
+            mode: row.mode,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled === 1,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        };
+    }
+
+    getAllCrawlSchedules(): CrawlSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM crawl_schedules ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: row.allow_subdomains === 1,
+            maxConcurrency: row.max_concurrency,
+            mode: row.mode,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled === 1,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        }));
+    }
+
+    getEnabledCrawlSchedules(): CrawlSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM crawl_schedules WHERE enabled = 1 ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: row.allow_subdomains === 1,
+            maxConcurrency: row.max_concurrency,
+            mode: row.mode,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled === 1,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        }));
+    }
+
+    insertScheduleExecution(data: Omit<ScheduleExecution, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO schedule_executions 
+            (schedule_id, session_id, started_at, completed_at, status, error_message, pages_crawled, resources_found, duration)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.scheduleId,
+            data.sessionId,
+            data.startedAt,
+            data.completedAt || null,
+            data.status,
+            data.errorMessage || null,
+            data.pagesCrawled,
+            data.resourcesFound,
+            data.duration
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    updateScheduleExecution(id: number, updates: Partial<ScheduleExecution>): void {
+        const fields = [];
+        const values = [];
+        
+        if (updates.sessionId !== undefined) {
+            fields.push('session_id = ?');
+            values.push(updates.sessionId);
+        }
+        if (updates.completedAt !== undefined) {
+            fields.push('completed_at = ?');
+            values.push(updates.completedAt);
+        }
+        if (updates.status !== undefined) {
+            fields.push('status = ?');
+            values.push(updates.status);
+        }
+        if (updates.errorMessage !== undefined) {
+            fields.push('error_message = ?');
+            values.push(updates.errorMessage);
+        }
+        if (updates.pagesCrawled !== undefined) {
+            fields.push('pages_crawled = ?');
+            values.push(updates.pagesCrawled);
+        }
+        if (updates.resourcesFound !== undefined) {
+            fields.push('resources_found = ?');
+            values.push(updates.resourcesFound);
+        }
+        if (updates.duration !== undefined) {
+            fields.push('duration = ?');
+            values.push(updates.duration);
+        }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE schedule_executions SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    getScheduleExecutions(scheduleId: number, limit: number = 50): ScheduleExecution[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM schedule_executions 
+            WHERE schedule_id = ? 
+            ORDER BY started_at DESC 
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(scheduleId, limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            scheduleId: row.schedule_id,
+            sessionId: row.session_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            status: row.status,
+            errorMessage: row.error_message,
+            pagesCrawled: row.pages_crawled,
+            resourcesFound: row.resources_found,
+            duration: row.duration
+        }));
+    }
+
+    getAllScheduleExecutions(limit: number = 100): ScheduleExecution[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM schedule_executions 
+            ORDER BY started_at DESC 
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            scheduleId: row.schedule_id,
+            sessionId: row.session_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            status: row.status,
+            errorMessage: row.error_message,
+            pagesCrawled: row.pages_crawled,
+            resourcesFound: row.resources_found,
+            duration: row.duration
         }));
     }
 

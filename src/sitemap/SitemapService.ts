@@ -1,5 +1,5 @@
-import { SitemapParser, SitemapUrl } from './SitemapParser';
-import { RobotsParser, RobotsTxt } from './RobotsParser';
+import { SitemapParser, SitemapUrl } from './SitemapParser.js';
+import { RobotsParser, RobotsTxt } from './RobotsParser.js';
 
 export interface SitemapDiscoveryResult {
     sitemapUrls: string[];
@@ -133,6 +133,26 @@ export class SitemapService {
             }
         } catch (error) {
             console.warn(`Failed to fetch sitemap ${sitemapUrl}:`, error);
+            
+            // Try alternative URL if it's a www subdomain issue
+            if (sitemapUrl.includes('www.')) {
+                const alternativeUrl = sitemapUrl.replace('www.', '');
+                try {
+                    const altResponse = await fetch(alternativeUrl, {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'WebCrawler/1.0',
+                            'Accept': 'application/xml, text/xml, */*'
+                        }
+                    });
+                    
+                    if (altResponse.ok) {
+                        return await altResponse.text();
+                    }
+                } catch (altError) {
+                    console.warn(`Failed to fetch alternative sitemap ${alternativeUrl}:`, altError);
+                }
+            }
         }
         
         return null;

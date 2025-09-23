@@ -26,25 +26,44 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const logger = Logger.getInstance();
     const db = getDatabase();
 
-    const start = new URL(startUrl);
-    const allowedHost = start.hostname;
+    let start: URL;
+    let allowedHost: string;
+    
+    try {
+        start = new URL(startUrl);
+        allowedHost = start.hostname;
 
-    const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
-    log.info(startMsg);
-    onLog?.(startMsg);
+        const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
+        log.info(startMsg);
+        onLog?.(startMsg);
+    } catch (error) {
+        const errorMsg = `Invalid start URL: ${startUrl}`;
+        logger.error(errorMsg, error as Error);
+        onLog?.(errorMsg);
+        throw error;
+    }
 
     // Create crawl session
-    const sessionId = db.createCrawlSession({
-        startUrl,
-        allowSubdomains,
-        maxConcurrency,
-        mode,
-        startedAt: new Date().toISOString(),
-        totalPages: 0,
-        totalResources: 0,
-        duration: 0,
-        status: 'running'
-    });
+    let sessionId: number;
+    try {
+        sessionId = db.createCrawlSession({
+            startUrl,
+            allowSubdomains,
+            maxConcurrency,
+            mode,
+            startedAt: new Date().toISOString(),
+            totalPages: 0,
+            totalResources: 0,
+            duration: 0,
+            status: 'running'
+        });
+        logger.info(`Created crawl session: ${sessionId}`);
+    } catch (error) {
+        const errorMsg = `Failed to create crawl session: ${(error as Error).message}`;
+        logger.error(errorMsg, error as Error);
+        onLog?.(errorMsg);
+        throw error;
+    }
 
     // Discover sitemaps and add URLs to queue
     const sitemapMsg = 'Discovering sitemaps...';
@@ -93,7 +112,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         onLog?.(errorMsg);
     }
 
-    const queue = await RequestQueue.open();
+    // Use a dedicated queue per session to avoid cross-run interference
+    const queue = await RequestQueue.open(`crawl-session-${sessionId}`);
 
     // Add discovered sitemap URLs to the queue
     try {
@@ -101,6 +121,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         for (const urlData of sitemapUrls) {
             await queue.addRequest({ url: urlData.url });
         }
+        // Always ensure the start URL is also in the queue
+        await queue.addRequest({ url: start.href });
         
         if (sitemapUrls.length > 0) {
             const queueMsg = `Added ${sitemapUrls.length} sitemap URLs to crawl queue`;
@@ -645,7 +667,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     if (mode === 'js') {
         await playwrightCrawler.run([{ url: start.href }]);
     } else {
-        await cheerioCrawler.run([{ url: start.href }]);
+        // Consume the populated request queue (start URL + sitemap URLs)
+        await cheerioCrawler.run();
         if (mode === 'auto' && jsFallbackUrls.size > 0) {
             onLog?.(`Auto mode: retrying ${jsFallbackUrls.size} page(s) with JS renderer`);
             await playwrightCrawler.run(Array.from(jsFallbackUrls).map((u) => ({ url: u })));

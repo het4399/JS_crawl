@@ -4,6 +4,7 @@ import cors from 'cors';
 import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { Logger } from './logging/Logger.js';
+import { SchedulerService } from './scheduler/SchedulerService.js';
 
 type Client = {
     id: number;
@@ -19,6 +20,137 @@ app.use(express.static('public'));
 
 // Add monitoring routes
 app.use('/api', monitoringRoutes);
+
+// Schedule management routes
+app.get('/api/schedules', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        const schedules = scheduleManager.getAllSchedules();
+        res.json({ schedules });
+    } catch (error) {
+        logger.error('Failed to get schedules', error as Error);
+        res.status(500).json({ error: 'Failed to get schedules' });
+    }
+});
+
+app.post('/api/schedules', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        const scheduleId = scheduleManager.createSchedule(req.body);
+        res.json({ id: scheduleId, message: 'Schedule created successfully' });
+    } catch (error) {
+        logger.error('Failed to create schedule', error as Error);
+        res.status(400).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/schedules/:id', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id));
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        res.json({ schedule });
+    } catch (error) {
+        logger.error('Failed to get schedule', error as Error);
+        res.status(500).json({ error: 'Failed to get schedule' });
+    }
+});
+
+app.put('/api/schedules/:id', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        scheduleManager.updateSchedule(parseInt(req.params.id), req.body);
+        res.json({ message: 'Schedule updated successfully' });
+    } catch (error) {
+        logger.error('Failed to update schedule', error as Error);
+        res.status(400).json({ error: (error as Error).message });
+    }
+});
+
+app.delete('/api/schedules/:id', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        scheduleManager.deleteSchedule(parseInt(req.params.id));
+        res.json({ message: 'Schedule deleted successfully' });
+    } catch (error) {
+        logger.error('Failed to delete schedule', error as Error);
+        res.status(500).json({ error: 'Failed to delete schedule' });
+    }
+});
+
+app.post('/api/schedules/:id/toggle', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        scheduleManager.toggleSchedule(parseInt(req.params.id));
+        res.json({ message: 'Schedule toggled successfully' });
+    } catch (error) {
+        logger.error('Failed to toggle schedule', error as Error);
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.post('/api/schedules/:id/trigger', async (req, res) => {
+    try {
+        await schedulerService.triggerSchedule(parseInt(req.params.id));
+        res.json({ message: 'Schedule triggered successfully' });
+    } catch (error) {
+        logger.error('Failed to trigger schedule', error as Error);
+        res.status(400).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/schedules/:id/executions', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        const limit = parseInt(req.query.limit as string) || 50;
+        const executions = scheduleManager.getExecutionHistory(parseInt(req.params.id), limit);
+        res.json({ executions });
+    } catch (error) {
+        logger.error('Failed to get schedule executions', error as Error);
+        res.status(500).json({ error: 'Failed to get schedule executions' });
+    }
+});
+
+app.get('/api/schedules/:id/stats', (req, res) => {
+    try {
+        const scheduleManager = schedulerService.getScheduleManager();
+        const stats = scheduleManager.getScheduleStats(parseInt(req.params.id));
+        res.json({ stats });
+    } catch (error) {
+        logger.error('Failed to get schedule stats', error as Error);
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/scheduler/status', (req, res) => {
+    try {
+        const status = schedulerService.getStatus();
+        res.json({ status });
+    } catch (error) {
+        logger.error('Failed to get scheduler status', error as Error);
+        res.status(500).json({ error: 'Failed to get scheduler status' });
+    }
+});
+
+app.post('/api/scheduler/validate-cron', (req, res) => {
+    try {
+        const { cronExpression } = req.body;
+        if (!cronExpression) {
+            return res.status(400).json({ error: 'cronExpression is required' });
+        }
+        
+        const scheduleManager = schedulerService.getScheduleManager();
+        const validation = scheduleManager.validateCronExpression(cronExpression);
+        const description = scheduleManager.getCronDescription(cronExpression);
+        
+        res.json({ validation, description });
+    } catch (error) {
+        logger.error('Failed to validate cron expression', error as Error);
+        res.status(500).json({ error: 'Failed to validate cron expression' });
+    }
+});
 
 let nextClientId = 1;
 const clients: Client[] = [];
@@ -141,6 +273,14 @@ app.post('/crawl', async (req, res) => {
     })();
 });
 
+// Initialize scheduler service
+const schedulerService = new SchedulerService({
+    checkIntervalMs: 60000, // Check every minute
+    maxConcurrentRuns: 3,
+    retryFailedSchedules: true,
+    retryDelayMs: 300000 // 5 minutes
+});
+
 const port = Number(process.env.PORT) || 3004;
 const server = app.listen(port, () => {
     logger.info(`Server started`, { port, environment: process.env.NODE_ENV || 'development' });
@@ -148,11 +288,16 @@ const server = app.listen(port, () => {
     console.log(`Health check: http://localhost:${port}/api/health`);
     console.log(`Metrics: http://localhost:${port}/api/metrics`);
     console.log(`Logs: http://localhost:${port}/api/logs`);
+    
+    // Start scheduler service
+    schedulerService.start();
+    console.log('Scheduler service started');
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
     console.log('\nShutting down server...');
+    schedulerService.stop();
     server.close(() => {
         console.log('Server closed');
         process.exit(0);
@@ -161,6 +306,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
     console.log('\nShutting down server...');
+    schedulerService.stop();
     server.close(() => {
         console.log('Server closed');
         process.exit(0);

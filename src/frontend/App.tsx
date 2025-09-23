@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import DataViewer from './DataViewer';
+import ScheduleList from './ScheduleList';
 
 interface CrawlData {
   url: string;
@@ -26,6 +27,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
+  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
@@ -157,7 +159,24 @@ function App() {
       </header>
 
       <main className="main">
-        <div className="controls">
+        <div className="tab-navigation">
+          <button 
+            className={`tab-btn ${activeTab === 'crawl' ? 'active' : ''}`}
+            onClick={() => setActiveTab('crawl')}
+          >
+            🕷️ Manual Crawl
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'schedules' ? 'active' : ''}`}
+            onClick={() => setActiveTab('schedules')}
+          >
+            ⏰ Scheduled Crawls
+          </button>
+        </div>
+
+        {activeTab === 'crawl' && (
+          <>
+            <div className="controls">
           <div className="input-group">
             <input
               type="url"
@@ -272,7 +291,13 @@ function App() {
               )}
             </div>
           </div>
-        </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'schedules' && (
+          <ScheduleList />
+        )}
       </main>
 
       {showDataViewer && (
