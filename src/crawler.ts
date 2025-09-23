@@ -28,14 +28,14 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
 
     let start: URL;
     let allowedHost: string;
-    
+
     try {
         start = new URL(startUrl);
         allowedHost = start.hostname;
 
-        const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
-        log.info(startMsg);
-        onLog?.(startMsg);
+    const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
+    log.info(startMsg);
+    onLog?.(startMsg);
     } catch (error) {
         const errorMsg = `Invalid start URL: ${startUrl}`;
         logger.error(errorMsg, error as Error);
@@ -112,17 +112,25 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         onLog?.(errorMsg);
     }
 
-    // Use a dedicated queue per session to avoid cross-run interference
-    const queue = await RequestQueue.open(`crawl-session-${sessionId}`);
+    // Use a unique queue per session run to avoid reusing handled requests
+    const queue = await RequestQueue.open(`crawl-session-${sessionId}-${Date.now()}`);
 
     // Add discovered sitemap URLs to the queue
     try {
         const sitemapUrls = db.getUncrawledSitemapUrls(sessionId);
-        for (const urlData of sitemapUrls) {
-            await queue.addRequest({ url: urlData.url });
-        }
-        // Always ensure the start URL is also in the queue
+        // Add requests directly to the same RequestQueue Cheerio will use
         await queue.addRequest({ url: start.href });
+        for (const u of sitemapUrls) {
+            await queue.addRequest({ url: u.url });
+        }
+
+        // Debug: report queue stats
+        try {
+            const info = await queue.getInfo();
+            const qmsg = `Queue prepared: pending=${info?.pendingRequestCount ?? 'n/a'}, handled=${info?.handledRequestCount ?? 'n/a'}`;
+            log.info(qmsg);
+            onLog?.(qmsg);
+        } catch {}
         
         if (sitemapUrls.length > 0) {
             const queueMsg = `Added ${sitemapUrls.length} sitemap URLs to crawl queue`;
@@ -262,15 +270,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 let absolute: string;
                 try { absolute = new URL(href, url).toString(); } catch { return; }
                 if (emittedCss.has(absolute)) return;
-                emittedCss.add(absolute);
+                    emittedCss.add(absolute);
                 db.upsertResource({
                     sessionId,
                     pageId: pageId,
-                    url: absolute,
-                    resourceType: 'css',
-                    title: '',
-                    description: 'CSS file',
-                    contentType: 'text/css',
+                        url: absolute,
+                        resourceType: 'css',
+                        title: '',
+                        description: 'CSS file',
+                        contentType: 'text/css',
                     statusCode: null,
                     responseTime: null,
                     timestamp: new Date().toISOString()
@@ -285,15 +293,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 let absolute: string;
                 try { absolute = new URL(src, url).toString(); } catch { return; }
                 if (emittedJs.has(absolute)) return;
-                emittedJs.add(absolute);
+                    emittedJs.add(absolute);
                 db.upsertResource({
                     sessionId,
                     pageId: pageId,
-                    url: absolute,
-                    resourceType: 'js',
-                    title: '',
-                    description: 'JavaScript file',
-                    contentType: 'application/javascript',
+                        url: absolute,
+                        resourceType: 'js',
+                        title: '',
+                        description: 'JavaScript file',
+                        contentType: 'application/javascript',
                     statusCode: null,
                     responseTime: null,
                     timestamp: new Date().toISOString()
@@ -309,15 +317,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 let absolute: string;
                 try { absolute = new URL(src, url).toString(); } catch { return; }
                 if (emittedImg.has(absolute)) return;
-                emittedImg.add(absolute);
+                    emittedImg.add(absolute);
                 db.upsertResource({
                     sessionId,
                     pageId: pageId,
-                    url: absolute,
-                    resourceType: 'image',
+                        url: absolute,
+                        resourceType: 'image',
                     title: alt,
-                    description: 'Image',
-                    contentType: 'image/*',
+                        description: 'Image',
+                        contentType: 'image/*',
                     statusCode: null,
                     responseTime: null,
                     timestamp: new Date().toISOString()
@@ -333,15 +341,15 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 try { absolute = new URL(href, url).toString(); } catch { return; }
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
                     if (emittedExternal.has(absolute)) return;
-                    emittedExternal.add(absolute);
+                        emittedExternal.add(absolute);
                     db.upsertResource({
                         sessionId,
                         pageId: pageId,
-                        url: absolute,
-                        resourceType: 'external',
-                        title: '',
-                        description: 'External link',
-                        contentType: 'text/html',
+                            url: absolute,
+                            resourceType: 'external',
+                            title: '',
+                            description: 'External link',
+                            contentType: 'text/html',
                         statusCode: null,
                         responseTime: null,
                         timestamp: new Date().toISOString()
@@ -667,7 +675,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     if (mode === 'js') {
         await playwrightCrawler.run([{ url: start.href }]);
     } else {
-        // Consume the populated request queue (start URL + sitemap URLs)
+        // Consume the provided RequestQueue populated above
         await cheerioCrawler.run();
         if (mode === 'auto' && jsFallbackUrls.size > 0) {
             onLog?.(`Auto mode: retrying ${jsFallbackUrls.size} page(s) with JS renderer`);
@@ -679,8 +687,10 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const totalPages = db.getPageCount(sessionId);
     const totalResources = db.getResourceCount(sessionId);
     const endTime = Date.now();
-    const startTime = new Date(db.getCrawlSession(sessionId)?.startedAt || new Date()).getTime();
-    const duration = Math.floor((endTime - startTime) / 1000);
+    const sessionInfo = db.getCrawlSession(sessionId) as any;
+    const startedAtIso: string | null = sessionInfo?.startedAt ?? sessionInfo?.started_at ?? null;
+    const startTime = startedAtIso ? new Date(startedAtIso).getTime() : Date.now();
+    const duration = Math.max(0, Math.floor((endTime - startTime) / 1000));
     
     db.updateCrawlSession(sessionId, {
         completedAt: new Date().toISOString(),
