@@ -575,8 +575,9 @@ router.get('/cron/execution/:id', (req, res) => {
         completedAt: execution.completed_at,
         status: execution.status,
         errorMessage: execution.error_message,
-        pagesCrawled: execution.pages_crawled,
-        resourcesFound: execution.resources_found,
+        // Prefer stored values; if zero/NULL, fall back to computed counts
+        pagesCrawled: (execution.pages_crawled ?? 0) || pages.length,
+        resourcesFound: (execution.resources_found ?? 0) || resources.length,
         duration: execution.duration
       },
       session: session ? {

@@ -170,10 +170,15 @@ export class SchedulerService {
             
             // Update execution as completed
             if (executionId) {
+                // Compute pages/resources for this session
+                const pagesCrawled = sessionId ? db.getPageCount(sessionId) : 0;
+                const resourcesFound = sessionId ? db.getResourceCount(sessionId) : 0;
                 this.scheduleManager.updateExecution(executionId, {
                     status: 'completed',
                     completedAt: new Date().toISOString(),
-                    duration
+                    duration,
+                    pagesCrawled,
+                    resourcesFound
                 });
             }
             
@@ -213,11 +218,16 @@ export class SchedulerService {
             executionId = this.scheduleManager.recordExecution(schedule.id, sessionId);
             
             if (executionId) {
+                // Compute whatever was crawled before failure
+                const pagesCrawled = sessionId ? db.getPageCount(sessionId) : 0;
+                const resourcesFound = sessionId ? db.getResourceCount(sessionId) : 0;
                 this.scheduleManager.updateExecution(executionId, {
                     status: 'failed',
                     completedAt: new Date().toISOString(),
                     errorMessage: (error as Error).message,
-                    duration
+                    duration,
+                    pagesCrawled,
+                    resourcesFound
                 });
             }
             
