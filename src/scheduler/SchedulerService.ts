@@ -146,7 +146,8 @@ export class SchedulerService {
                 maxConcurrency: schedule.maxConcurrency,
                 perHostDelayMs: 1000,
                 denyParamPrefixes: ['utm_', 'fbclid', 'gclid'],
-                mode: schedule.mode
+                mode: schedule.mode,
+                scheduleId: schedule.id
             }, {
                 onLog: (message) => {
                     this.logger.info(`[Schedule ${schedule.name}] ${message}`);

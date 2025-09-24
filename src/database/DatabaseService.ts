@@ -7,6 +7,7 @@ export interface CrawlSession {
     allowSubdomains: boolean;
     maxConcurrency: number;
     mode: string;
+    scheduleId?: number;
     startedAt: string;
     completedAt?: string;
     totalPages: number;
@@ -115,6 +116,7 @@ export class DatabaseService {
                 allow_subdomains INTEGER NOT NULL,
                 max_concurrency INTEGER NOT NULL,
                 mode TEXT NOT NULL,
+                schedule_id INTEGER,
                 started_at TEXT NOT NULL,
                 completed_at TEXT,
                 total_pages INTEGER DEFAULT 0,
@@ -233,6 +235,7 @@ export class DatabaseService {
         // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
         try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
+        try { this.db.exec('ALTER TABLE crawl_sessions ADD COLUMN schedule_id INTEGER'); } catch {}
 
         // Create indexes for better performance
         this.db.exec(`
@@ -260,8 +263,8 @@ export class DatabaseService {
     createCrawlSession(data: Omit<CrawlSession, 'id'>): number {
         const stmt = this.db.prepare(`
             INSERT INTO crawl_sessions 
-            (start_url, allow_subdomains, max_concurrency, mode, started_at, completed_at, total_pages, total_resources, duration, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (start_url, allow_subdomains, max_concurrency, mode, schedule_id, started_at, completed_at, total_pages, total_resources, duration, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = stmt.run(
@@ -269,6 +272,7 @@ export class DatabaseService {
             data.allowSubdomains ? 1 : 0,
             data.maxConcurrency,
             data.mode,
+            data.scheduleId ?? null,
             data.startedAt,
             data.completedAt ?? null,
             data.totalPages,
@@ -290,6 +294,7 @@ export class DatabaseService {
             allowSubdomains: 'allow_subdomains',
             maxConcurrency: 'max_concurrency',
             mode: 'mode',
+            scheduleId: 'schedule_id',
             startedAt: 'started_at',
             completedAt: 'completed_at',
             totalPages: 'total_pages',
@@ -322,6 +327,7 @@ export class DatabaseService {
         
         return {
             ...result,
+            scheduleId: result.schedule_id ?? undefined,
             allowSubdomains: Boolean(result.allow_subdomains)
         } as CrawlSession;
     }
@@ -333,8 +339,37 @@ export class DatabaseService {
         
         return {
             ...result,
+            scheduleId: result.schedule_id ?? undefined,
             allowSubdomains: Boolean(result.allow_subdomains)
         } as CrawlSession;
+    }
+
+    getCrawlSessions(limit: number = 50, offset: number = 0, scheduleId?: number): CrawlSession[] {
+        let query = 'SELECT * FROM crawl_sessions';
+        const params: any[] = [];
+        if (typeof scheduleId === 'number') {
+            query += ' WHERE schedule_id = ?';
+            params.push(scheduleId);
+        }
+        query += ' ORDER BY started_at DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const stmt = this.db.prepare(query);
+        const rows = stmt.all(...params) as any[];
+        return rows.map(row => ({
+            id: row.id,
+            startUrl: row.start_url,
+            allowSubdomains: row.allow_subdomains === 1,
+            maxConcurrency: row.max_concurrency,
+            mode: row.mode,
+            scheduleId: row.schedule_id ?? undefined,
+            startedAt: row.started_at,
+            completedAt: row.completed_at ?? undefined,
+            totalPages: row.total_pages,
+            totalResources: row.total_resources,
+            duration: row.duration,
+            status: row.status
+        })) as CrawlSession[];
     }
 
     // New helpers for status lookup by URL
@@ -342,14 +377,14 @@ export class DatabaseService {
         const stmt = this.db.prepare('SELECT * FROM crawl_sessions WHERE start_url = ? ORDER BY started_at DESC LIMIT 1');
         const row = stmt.get(startUrl) as any;
         if (!row) return null;
-        return { ...row, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
+        return { ...row, scheduleId: row.schedule_id ?? undefined, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
     }
 
     getRunningSessionByUrl(startUrl: string): CrawlSession | null {
         const stmt = this.db.prepare("SELECT * FROM crawl_sessions WHERE start_url = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1");
         const row = stmt.get(startUrl) as any;
         if (!row) return null;
-        return { ...row, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
+        return { ...row, scheduleId: row.schedule_id ?? undefined, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
     }
 
     getAverageDurationForUrl(startUrl: string): number | null {
@@ -859,6 +894,13 @@ export class DatabaseService {
         };
     }
 
+    getScheduleInfoForSession(sessionId: number): { scheduleId?: number; scheduleName?: string } {
+        const session = this.getCrawlSession(sessionId);
+        if (!session || !session.scheduleId) return {};
+        const sched = this.getCrawlSchedule(session.scheduleId);
+        return { scheduleId: session.scheduleId, scheduleName: sched?.name };
+    }
+
     getAllCrawlSchedules(): CrawlSchedule[] {
         const stmt = this.db.prepare('SELECT * FROM crawl_schedules ORDER BY created_at DESC');
         const rows = stmt.all() as any[];
@@ -1016,6 +1058,11 @@ export class DatabaseService {
 
     close(): void {
         this.db.close();
+    }
+
+    // Public method to access the database instance for raw queries
+    getDb(): Database.Database {
+        return this.db;
     }
 }
 

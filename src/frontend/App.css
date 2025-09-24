@@ -238,6 +238,41 @@ body {
   left: 100%;
 }
 
+.view-history-btn {
+  background: linear-gradient(135deg, #6f42c1 0%, #e83e8c 100%);
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 6px 20px rgba(111, 66, 193, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.view-history-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.view-history-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(111, 66, 193, 0.4);
+}
+
+.view-history-btn:hover::before {
+  left: 100%;
+}
+
 .main {
   background: white;
   border-radius: 20px;
@@ -828,7 +863,7 @@ body {
     gap: 15px;
   }
   
-  .start-btn, .view-data-btn {
+  .start-btn, .view-data-btn, .view-history-btn {
     grid-column: span 2;
   }
 }
@@ -839,7 +874,7 @@ body {
     gap: 15px;
   }
   
-  .start-btn, .view-data-btn {
+  .start-btn, .view-data-btn, .view-history-btn {
     grid-column: span 1;
   }
 }
@@ -851,7 +886,7 @@ body {
     padding: 20px;
   }
   
-  .start-btn, .view-data-btn {
+  .start-btn, .view-data-btn, .view-history-btn {
     grid-column: span 1;
     width: 100%;
   }

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import DataViewer from './DataViewer';
 import ScheduleList from './ScheduleList';
+import CronHistory from './CronHistory';
 
 interface CrawlData {
   url: string;
@@ -27,7 +28,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
-  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules'>('crawl');
+  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
@@ -39,7 +40,7 @@ function App() {
     latest: { id: number; status: string; startedAt: string; completedAt: string | null; totalPages: number; totalResources: number; duration: number | null } | null;
     averageDurationSec: number | null;
   }>(null);
-  
+
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -64,12 +65,12 @@ function App() {
       console.log('Parsed event data:', data);
       console.log('Data keys:', Object.keys(data));
       console.log('Data values:', Object.values(data));
-      
+
       const duration = data.duration || 0;
       const pagesPerSecond = data.pagesPerSecond || 0;
-      
+
       console.log('Final values:', { count: data.count, duration, pagesPerSecond });
-      
+
       setCrawlStats({
         count: data.count,
         duration: duration,
@@ -161,7 +162,7 @@ function App() {
             <span className="stat-number">{isCrawling ? 'Active' : 'Ready'}</span>
             <span className="stat-label">Status</span>
           </div>
-          
+
           {crawlStats && !isCrawling && (
             <>
               <div className="stat-card">
@@ -188,142 +189,149 @@ function App() {
             </>
           )}
         </div>
-        
+
       </header>
 
       <main className="main">
         <div className="tab-navigation">
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'crawl' ? 'active' : ''}`}
             onClick={() => setActiveTab('crawl')}
           >
             🕷️ Manual Crawl
           </button>
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'schedules' ? 'active' : ''}`}
             onClick={() => setActiveTab('schedules')}
           >
             ⏰ Scheduled Crawls
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            📜 Cron History
           </button>
         </div>
 
         {activeTab === 'crawl' && (
           <>
             <div className="controls">
-          <div className="input-group">
-            <input
-              type="url"
-              placeholder="https://example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="url-input"
-              disabled={isCrawling}
-            />
-          </div>
+              <div className="input-group">
+                <input
+                  type="url"
+                  placeholder="https://example.com"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="url-input"
+                  disabled={isCrawling}
+                />
+              </div>
 
-          <div className="control-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={allowSubdomains}
-                onChange={(e) => setAllowSubdomains(e.target.checked)}
+              <div className="control-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allowSubdomains}
+                    onChange={(e) => setAllowSubdomains(e.target.checked)}
+                    disabled={isCrawling}
+                  />
+                  Subdomains
+                </label>
+              </div>
+
+              <div className="control-group">
+                <label>
+                  Concurrency:
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={maxConcurrency}
+                    onChange={(e) => setMaxConcurrency(Number(e.target.value))}
+                    className="number-input"
+                    disabled={isCrawling}
+                  />
+                </label>
+              </div>
+
+              <div className="control-group">
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="select"
+                  disabled={isCrawling}
+                >
+                  <option value="html">HTML only (fast)</option>
+                  <option value="auto">Auto (fallback to JS)</option>
+                  <option value="js">JS only (Playwright)</option>
+                </select>
+              </div>
+
+              <button
+                onClick={checkAndMaybePrompt}
                 disabled={isCrawling}
-              />
-              Subdomains
-            </label>
-          </div>
+                className="start-btn"
+              >
+                {isCrawling ? '⏳ Crawling...' : '🚀 Start Crawl'}
+              </button>
 
-          <div className="control-group">
-            <label>
-              Concurrency:
-              <input
-                type="number"
-                min="1"
-                max="500"
-                value={maxConcurrency}
-                onChange={(e) => setMaxConcurrency(Number(e.target.value))}
-                className="number-input"
-                disabled={isCrawling}
-              />
-            </label>
-          </div>
+              <button
+                onClick={() => setShowDataViewer(true)}
+                className="view-data-btn"
+              >
+                📊 View Data
+              </button>
 
-          <div className="control-group">
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="select"
-              disabled={isCrawling}
-            >
-              <option value="html">HTML only (fast)</option>
-              <option value="auto">Auto (fallback to JS)</option>
-              <option value="js">JS only (Playwright)</option>
-            </select>
-          </div>
-
-          <button
-            onClick={checkAndMaybePrompt}
-            disabled={isCrawling}
-            className="start-btn"
-          >
-            {isCrawling ? '⏳ Crawling...' : '🚀 Start Crawl'}
-          </button>
-          
-          <button
-            onClick={() => setShowDataViewer(true)}
-            className="view-data-btn"
-          >
-            📊 View Data
-          </button>
-        </div>
-
-        {/* Resume UI removed for minimalism */}
-
-
-        <div className="status-bar">
-          <div className="status-indicator">
-            <div className={`status-dot ${isCrawling ? 'crawling' : ''}`}></div>
-            <span>{isCrawling ? 'Crawling in progress...' : 'Ready to crawl'}</span>
-          </div>
-          <div className="count">{pageCount} pages discovered</div>
-        </div>
-
-        <div className="grid">
-          <div className="panel">
-            <h3>📝 Live Logs</h3>
-            <div className="logs">
-              {logs.length === 0 ? (
-                <div className="empty-state">
-                  {isCrawling ? 'Crawling in progress...' : 'Waiting for crawl to start...'}
-                </div>
-              ) : (
-                logs.map((log, index) => (
-                  <div key={index} className="log-entry">
-                    <span className="timestamp">[{new Date().toLocaleTimeString()}]</span> {log}
-                  </div>
-                ))
-              )}
             </div>
-          </div>
 
-          <div className="panel">
-            <h3>🔗 Discovered Pages</h3>
-            <div className="pages">
-              {pages.length === 0 ? (
-                <div className="empty-state">
-                  {isCrawling ? 'Discovering pages...' : 'No pages discovered yet'}
-                </div>
-              ) : (
-                pages.map((page, index) => (
-                  <div key={index} className="page-entry">
-                    <a href={page} target="_blank" rel="noreferrer noopener">
-                      {page}
-                    </a>
-                  </div>
-                ))
-              )}
+            {/* Resume UI removed for minimalism */}
+
+
+            <div className="status-bar">
+              <div className="status-indicator">
+                <div className={`status-dot ${isCrawling ? 'crawling' : ''}`}></div>
+                <span>{isCrawling ? 'Crawling in progress...' : 'Ready to crawl'}</span>
+              </div>
+              <div className="count">{pageCount} pages discovered</div>
             </div>
-          </div>
+
+            <div className="grid">
+              <div className="panel">
+                <h3>📝 Live Logs</h3>
+                <div className="logs">
+                  {logs.length === 0 ? (
+                    <div className="empty-state">
+                      {isCrawling ? 'Crawling in progress...' : 'Waiting for crawl to start...'}
+                    </div>
+                  ) : (
+                    logs.map((log, index) => (
+                      <div key={index} className="log-entry">
+                        <span className="timestamp">[{new Date().toLocaleTimeString()}]</span> {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="panel">
+                <h3>🔗 Discovered Pages</h3>
+                <div className="pages">
+                  {pages.length === 0 ? (
+                    <div className="empty-state">
+                      {isCrawling ? 'Discovering pages...' : 'No pages discovered yet'}
+                    </div>
+                  ) : (
+                    pages.map((page, index) => (
+                      <div key={index} className="page-entry">
+                        <a href={page} target="_blank" rel="noreferrer noopener">
+                          {page}
+                        </a>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -331,11 +339,16 @@ function App() {
         {activeTab === 'schedules' && (
           <ScheduleList />
         )}
+
+        {activeTab === 'history' && (
+          <CronHistory onClose={() => setActiveTab('crawl')} />
+        )}
       </main>
 
       {showDataViewer && (
         <DataViewer onClose={() => setShowDataViewer(false)} />
       )}
+
 
       {showReusePrompt && (
         <div className="modal-overlay" onClick={() => setShowReusePrompt(false)}>

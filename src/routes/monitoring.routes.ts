@@ -301,7 +301,12 @@ router.get('/data/list', async (req, res) => {
       sitemapDiscoveries = db.getSitemapDiscoveries(sessionId);
     }
     
-    const allData = [...pages, ...resources].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const allData = [...pages, ...resources]
+      .map((item: any) => {
+        const info = db.getScheduleInfoForSession(item.sessionId ?? item.session_id);
+        return { ...item, scheduleId: info.scheduleId, scheduleName: info.scheduleName, sessionId: item.sessionId ?? item.session_id };
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const totalPages = db.getPageCount(sessionId);
     const totalResources = db.getResourceCount(sessionId);
@@ -339,6 +344,22 @@ router.get('/data/list', async (req, res) => {
   } catch (error) {
     logger.error('Failed to list database data', error as Error);
     res.status(500).json({ error: 'Failed to retrieve data', details: (error as Error).message });
+  }
+});
+
+// List crawl sessions for filtering in UI
+router.get('/data/sessions', (req, res) => {
+  try {
+    const db = getDatabase();
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const scheduleId = req.query.scheduleId ? parseInt(req.query.scheduleId as string) : undefined;
+
+    const sessions = db.getCrawlSessions(limit, offset, scheduleId);
+    res.json({ sessions, paging: { limit, offset, count: sessions.length } });
+  } catch (error) {
+    logger.error('Failed to list sessions', error as Error);
+    res.status(500).json({ error: 'Failed to list sessions' });
   }
 });
 
@@ -417,6 +438,407 @@ router.get('/status', (req, res) => {
     res.status(500).json({ healthy: false, error: 'Status check failed', timestamp: new Date().toISOString() });
   }
 });
+
+// Cron session history endpoints
+router.get('/cron/history', (req, res) => {
+  try {
+    const db = getDatabase();
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const scheduleId = req.query.scheduleId ? parseInt(req.query.scheduleId as string) : undefined;
+    const status = req.query.status as string;
+    const startDate = req.query.startDate as string;
+    const endDate = req.query.endDate as string;
+
+    let query = `
+      SELECT se.*, cs.name as schedule_name, cs.start_url, cs.mode, cs.allow_subdomains, cs.max_concurrency
+      FROM schedule_executions se
+      LEFT JOIN crawl_schedules cs ON se.schedule_id = cs.id
+    `;
+    
+    const conditions: string[] = [];
+    const params: any[] = [];
+    
+    if (scheduleId) {
+      conditions.push('se.schedule_id = ?');
+      params.push(scheduleId);
+    }
+    
+    if (status) {
+      conditions.push('se.status = ?');
+      params.push(status);
+    }
+    
+    if (startDate) {
+      conditions.push('se.started_at >= ?');
+      params.push(startDate);
+    }
+    
+    if (endDate) {
+      conditions.push('se.started_at <= ?');
+      params.push(endDate);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY se.started_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    const stmt = db.getDb().prepare(query);
+    const executions = stmt.all(...params) as any[];
+    
+    // Get total count for pagination
+    let countQuery = 'SELECT COUNT(*) as total FROM schedule_executions se';
+    if (conditions.length > 0) {
+      countQuery += ' WHERE ' + conditions.join(' AND ');
+    }
+    const countStmt = db.getDb().prepare(countQuery);
+    const countParams = params.slice(0, -2); // Remove limit and offset
+    const totalResult = countStmt.get(...countParams) as { total: number };
+    
+    res.json({
+      executions: executions.map(exec => ({
+        id: exec.id,
+        scheduleId: exec.schedule_id,
+        sessionId: exec.session_id,
+        scheduleName: exec.schedule_name,
+        startUrl: exec.start_url,
+        mode: exec.mode,
+        allowSubdomains: exec.allow_subdomains === 1,
+        maxConcurrency: exec.max_concurrency,
+        startedAt: exec.started_at,
+        completedAt: exec.completed_at,
+        status: exec.status,
+        errorMessage: exec.error_message,
+        pagesCrawled: exec.pages_crawled,
+        resourcesFound: exec.resources_found,
+        duration: exec.duration
+      })),
+      paging: {
+        limit,
+        offset,
+        count: executions.length,
+        total: totalResult.total,
+        hasMore: offset + executions.length < totalResult.total
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get cron history', error as Error);
+    res.status(500).json({ error: 'Failed to get cron history' });
+  }
+});
+
+// Get detailed execution info with session data
+router.get('/cron/execution/:id', (req, res) => {
+  try {
+    const db = getDatabase();
+    const executionId = parseInt(req.params.id);
+    
+    // Get execution details
+    const executionStmt = db.getDb().prepare(`
+      SELECT se.*, cs.name as schedule_name, cs.start_url, cs.mode, cs.allow_subdomains, cs.max_concurrency
+      FROM schedule_executions se
+      LEFT JOIN crawl_schedules cs ON se.schedule_id = cs.id
+      WHERE se.id = ?
+    `);
+    const execution = executionStmt.get(executionId) as any;
+    
+    if (!execution) {
+      return res.status(404).json({ error: 'Execution not found' });
+    }
+    
+    // Get session details
+    const sessionStmt = db.getDb().prepare('SELECT * FROM crawl_sessions WHERE id = ?');
+    const session = sessionStmt.get(execution.session_id) as any;
+    
+    // Get pages and resources for this session
+    const pages = db.getPages(execution.session_id, 1000, 0);
+    const resources = db.getResources(execution.session_id, undefined, 1000, 0);
+    
+    // Get sitemap data
+    const sitemapUrls = db.getSitemapUrls(execution.session_id);
+    const sitemapDiscoveries = db.getSitemapDiscoveries(execution.session_id);
+    
+    res.json({
+      execution: {
+        id: execution.id,
+        scheduleId: execution.schedule_id,
+        sessionId: execution.session_id,
+        scheduleName: execution.schedule_name,
+        startUrl: execution.start_url,
+        mode: execution.mode,
+        allowSubdomains: execution.allow_subdomains === 1,
+        maxConcurrency: execution.max_concurrency,
+        startedAt: execution.started_at,
+        completedAt: execution.completed_at,
+        status: execution.status,
+        errorMessage: execution.error_message,
+        pagesCrawled: execution.pages_crawled,
+        resourcesFound: execution.resources_found,
+        duration: execution.duration
+      },
+      session: session ? {
+        id: session.id,
+        startUrl: session.start_url,
+        allowSubdomains: session.allow_subdomains === 1,
+        maxConcurrency: session.max_concurrency,
+        mode: session.mode,
+        startedAt: session.started_at,
+        completedAt: session.completed_at,
+        totalPages: session.total_pages,
+        totalResources: session.total_resources,
+        duration: session.duration,
+        status: session.status
+      } : null,
+      data: {
+        pages: pages.slice(0, 100), // Limit for performance
+        resources: resources.slice(0, 100),
+        sitemapUrls: sitemapUrls.slice(0, 50),
+        sitemapDiscoveries: sitemapDiscoveries.slice(0, 20)
+      },
+      summary: {
+        totalPages: pages.length,
+        totalResources: resources.length,
+        totalSitemapUrls: sitemapUrls.length,
+        crawledSitemapUrls: sitemapUrls.filter((url: any) => url.crawled).length,
+        sitemapDiscoveries: sitemapDiscoveries.length
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get execution details', error as Error);
+    res.status(500).json({ error: 'Failed to get execution details' });
+  }
+});
+
+// Get cron session statistics
+router.get('/cron/stats', (req, res) => {
+  try {
+    const db = getDatabase();
+    const scheduleId = req.query.scheduleId ? parseInt(req.query.scheduleId as string) : undefined;
+    
+    // Get overall stats
+    let statsQuery = `
+      SELECT 
+        COUNT(*) as total_executions,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_executions,
+        SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running_executions,
+        AVG(CASE WHEN status = 'completed' THEN duration ELSE NULL END) as avg_duration,
+        SUM(pages_crawled) as total_pages_crawled,
+        SUM(resources_found) as total_resources_found
+      FROM schedule_executions
+    `;
+    
+    const params: any[] = [];
+    if (scheduleId) {
+      statsQuery += ' WHERE schedule_id = ?';
+      params.push(scheduleId);
+    }
+    
+    const statsStmt = db.getDb().prepare(statsQuery);
+    const stats = statsStmt.get(...params) as any;
+    
+    // Get recent executions
+    let recentQuery = `
+      SELECT se.*, cs.name as schedule_name
+      FROM schedule_executions se
+      LEFT JOIN crawl_schedules cs ON se.schedule_id = cs.id
+    `;
+    
+    if (scheduleId) {
+      recentQuery += ' WHERE se.schedule_id = ?';
+    }
+    
+    recentQuery += ' ORDER BY se.started_at DESC LIMIT 10';
+    
+    const recentStmt = db.getDb().prepare(recentQuery);
+    const recentExecutions = recentStmt.all(...(scheduleId ? [scheduleId] : [])) as any[];
+    
+    // Get schedule performance
+    const performanceQuery = `
+      SELECT 
+        cs.id,
+        cs.name,
+        cs.start_url,
+        COUNT(se.id) as total_runs,
+        SUM(CASE WHEN se.status = 'completed' THEN 1 ELSE 0 END) as successful_runs,
+        SUM(CASE WHEN se.status = 'failed' THEN 1 ELSE 0 END) as failed_runs,
+        AVG(CASE WHEN se.status = 'completed' THEN se.duration ELSE NULL END) as avg_duration,
+        MAX(se.started_at) as last_run
+      FROM crawl_schedules cs
+      LEFT JOIN schedule_executions se ON cs.id = se.schedule_id
+      GROUP BY cs.id, cs.name, cs.start_url
+      ORDER BY last_run DESC
+    `;
+    
+    const performanceStmt = db.getDb().prepare(performanceQuery);
+    const performance = performanceStmt.all() as any[];
+    
+    res.json({
+      overall: {
+        totalExecutions: stats.total_executions || 0,
+        successfulExecutions: stats.successful_executions || 0,
+        failedExecutions: stats.failed_executions || 0,
+        runningExecutions: stats.running_executions || 0,
+        successRate: stats.total_executions > 0 ? 
+          Math.round((stats.successful_executions / stats.total_executions) * 100) : 0,
+        averageDuration: Math.round(stats.avg_duration || 0),
+        totalPagesCrawled: stats.total_pages_crawled || 0,
+        totalResourcesFound: stats.total_resources_found || 0
+      },
+      recent: recentExecutions.map(exec => ({
+        id: exec.id,
+        scheduleId: exec.schedule_id,
+        scheduleName: exec.schedule_name,
+        startedAt: exec.started_at,
+        completedAt: exec.completed_at,
+        status: exec.status,
+        duration: exec.duration,
+        pagesCrawled: exec.pages_crawled,
+        resourcesFound: exec.resources_found
+      })),
+      performance: performance.map(perf => ({
+        scheduleId: perf.id,
+        scheduleName: perf.name,
+        startUrl: perf.start_url,
+        totalRuns: perf.total_runs || 0,
+        successfulRuns: perf.successful_runs || 0,
+        failedRuns: perf.failed_runs || 0,
+        successRate: perf.total_runs > 0 ? 
+          Math.round((perf.successful_runs / perf.total_runs) * 100) : 0,
+        averageDuration: Math.round(perf.avg_duration || 0),
+        lastRun: perf.last_run
+      }))
+    });
+  } catch (error) {
+    logger.error('Failed to get cron stats', error as Error);
+    res.status(500).json({ error: 'Failed to get cron stats' });
+  }
+});
+
+// Export cron session history
+router.get('/cron/export', (req, res) => {
+  try {
+    const { format = 'json', scheduleId, startDate, endDate } = req.query;
+    const db = getDatabase();
+    
+    let query = `
+      SELECT se.*, cs.name as schedule_name, cs.start_url, cs.mode, cs.allow_subdomains, cs.max_concurrency
+      FROM schedule_executions se
+      LEFT JOIN crawl_schedules cs ON se.schedule_id = cs.id
+    `;
+    
+    const conditions: string[] = [];
+    const params: any[] = [];
+    
+    if (scheduleId) {
+      conditions.push('se.schedule_id = ?');
+      params.push(parseInt(scheduleId as string));
+    }
+    
+    if (startDate) {
+      conditions.push('se.started_at >= ?');
+      params.push(startDate);
+    }
+    
+    if (endDate) {
+      conditions.push('se.started_at <= ?');
+      params.push(endDate);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY se.started_at DESC';
+    
+    const stmt = db.getDb().prepare(query);
+    const executions = stmt.all(...params) as any[];
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `cron-history-${timestamp}`;
+    
+    const exportData = {
+      exportInfo: {
+        timestamp: new Date().toISOString(),
+        format: format as string,
+        totalExecutions: executions.length,
+        filters: { scheduleId, startDate, endDate }
+      },
+      executions: executions.map(exec => ({
+        id: exec.id,
+        scheduleId: exec.schedule_id,
+        sessionId: exec.session_id,
+        scheduleName: exec.schedule_name,
+        startUrl: exec.start_url,
+        mode: exec.mode,
+        allowSubdomains: exec.allow_subdomains === 1,
+        maxConcurrency: exec.max_concurrency,
+        startedAt: exec.started_at,
+        completedAt: exec.completed_at,
+        status: exec.status,
+        errorMessage: exec.error_message,
+        pagesCrawled: exec.pages_crawled,
+        resourcesFound: exec.resources_found,
+        duration: exec.duration
+      }))
+    };
+    
+    if (format === 'csv') {
+      const csv = convertCronHistoryToCSV(exportData);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+      res.send(csv);
+    } else {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
+      res.json(exportData);
+    }
+    
+    logger.info('Cron history exported', { format, count: executions.length });
+  } catch (error) {
+    logger.error('Failed to export cron history', error as Error);
+    res.status(500).json({ error: 'Failed to export cron history' });
+  }
+});
+
+// Helper function for CSV conversion
+function convertCronHistoryToCSV(data: any): string {
+  if (data.executions.length === 0) return '';
+  
+  const headers = [
+    'ID', 'Schedule ID', 'Session ID', 'Schedule Name', 'Start URL', 'Mode',
+    'Allow Subdomains', 'Max Concurrency', 'Started At', 'Completed At',
+    'Status', 'Error Message', 'Pages Crawled', 'Resources Found', 'Duration (ms)'
+  ];
+  
+  const csvRows = [headers.join(',')];
+  
+  for (const exec of data.executions) {
+    const values = [
+      exec.id,
+      exec.scheduleId,
+      exec.sessionId,
+      `"${exec.scheduleName || ''}"`,
+      `"${exec.startUrl}"`,
+      exec.mode,
+      exec.allowSubdomains ? 'Yes' : 'No',
+      exec.maxConcurrency,
+      exec.startedAt,
+      exec.completedAt || '',
+      exec.status,
+      `"${exec.errorMessage || ''}"`,
+      exec.pagesCrawled,
+      exec.resourcesFound,
+      exec.duration
+    ];
+    csvRows.push(values.join(','));
+  }
+  
+  return csvRows.join('\n');
+}
 
 export { router as monitoringRoutes, healthChecker, metricsCollector };
 

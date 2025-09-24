@@ -12,6 +12,9 @@ interface CrawlData {
   timestamp: string;
   success?: boolean;
   resourceType?: string;
+  sessionId?: number;
+  scheduleId?: number;
+  scheduleName?: string;
 }
 
 interface DataViewerProps {
@@ -29,15 +32,22 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
   const [serverTotal, setServerTotal] = useState<number | null>(null);
   const [serverOffset, setServerOffset] = useState(0);
   const [serverLimit] = useState(1000);
+  const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; scheduleId?: number }>>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>('all');
 
   useEffect(() => {
+    loadSessions();
     loadData();
   }, []);
 
   const loadData = async (opts?: { append?: boolean }) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/data/list?limit=${serverLimit}&offset=${opts?.append ? serverOffset : 0}`);
+      const params = new URLSearchParams();
+      params.set('limit', String(serverLimit));
+      params.set('offset', String(opts?.append ? serverOffset : 0));
+      if (selectedSessionId !== 'all') params.set('sessionId', String(selectedSessionId));
+      const response = await fetch(`/api/data/list?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to load data');
       
       const result = await response.json();
@@ -55,6 +65,17 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
       setData([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSessions = async () => {
+    try {
+      const res = await fetch('/api/data/sessions?limit=200');
+      if (!res.ok) throw new Error('Failed to load sessions');
+      const result = await res.json();
+      setSessions(result.sessions || []);
+    } catch (e) {
+      console.error('Failed to load sessions', e);
     }
   };
 
@@ -202,6 +223,26 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
               className="search-input"
             />
           </div>
+          <div className="session-filter">
+            <select
+              value={selectedSessionId}
+              onChange={(e) => {
+                const v = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                setSelectedSessionId(v);
+                setServerOffset(0);
+                loadData();
+              }}
+              className="search-input"
+              title="Filter by session"
+            >
+              <option value="all">All sessions</option>
+              {sessions.map(s => (
+                <option key={s.id} value={s.id}>
+                  Session #{s.id} {s.startedAt ? `(${new Date(s.startedAt).toLocaleString()})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           
           <div className="export-controls">
             <button onClick={() => exportData('json')} className="export-btn">
@@ -238,6 +279,12 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                 <th onClick={() => handleSort('url')} className="sortable">
                   URL {sortField === 'url' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
+                <th>
+                  Schedule
+                </th>
+                <th>
+                  Session
+                </th>
                 <th onClick={() => handleSort('title')} className="sortable">
                   Title {sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -271,6 +318,12 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                     <a href={item.url || '#'} target="_blank" rel="noopener noreferrer">
                       {item.url || 'No URL'}
                     </a>
+                  </td>
+                  <td className="schedule-cell" title={item.scheduleName || (item.scheduleId ? `Schedule #${item.scheduleId}` : 'Unknown')}>
+                    {item.scheduleName || (item.scheduleId ? `#${item.scheduleId}` : '—')}
+                  </td>
+                  <td className="session-cell">
+                    {item.sessionId ?? '—'}
                   </td>
                   <td className="title-cell" title={item.title || 'No title'}>
                     {item.title || 'No title'}

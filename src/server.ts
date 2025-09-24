@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { Logger } from './logging/Logger.js';
@@ -17,6 +19,12 @@ const logger = Logger.getInstance();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Serve built frontend (Vite output)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distFrontendPath = path.resolve(__dirname, '../dist-frontend');
+app.use(express.static(distFrontendPath));
 
 // Add monitoring routes
 app.use('/api', monitoringRoutes);

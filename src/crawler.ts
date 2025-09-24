@@ -12,6 +12,7 @@ type CrawlOptions = {
     perHostDelayMs: number;
     denyParamPrefixes: string[];
     mode?: 'html' | 'js' | 'auto';
+    scheduleId?: number;
 };
 
 type CrawlEvents = {
@@ -21,7 +22,7 @@ type CrawlEvents = {
 };
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html' } = options;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId } = options;
     const { onLog, onPage, onDone } = events;
     const logger = Logger.getInstance();
     const db = getDatabase();
@@ -51,6 +52,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             allowSubdomains,
             maxConcurrency,
             mode,
+            scheduleId,
             startedAt: new Date().toISOString(),
             totalPages: 0,
             totalResources: 0,
