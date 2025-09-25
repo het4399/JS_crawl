@@ -5,6 +5,32 @@ import { MetricsCollector } from './monitoring/MetricsCollector.js';
 import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 import { SitemapService } from './sitemap/SitemapService.js';
 
+/**
+ * Check if a URL is a valid HTTP/HTTPS link that should be processed
+ */
+function isValidHttpLink(href: string): boolean {
+    if (!href) return false;
+    
+    // Skip non-HTTP protocols
+    const lowerHref = href.toLowerCase();
+    if (lowerHref.startsWith('javascript:') ||
+        lowerHref.startsWith('mailto:') ||
+        lowerHref.startsWith('tel:') ||
+        lowerHref.startsWith('sms:') ||
+        lowerHref.startsWith('ftp:') ||
+        lowerHref.startsWith('file:') ||
+        lowerHref.startsWith('data:') ||
+        lowerHref.startsWith('blob:') ||
+        lowerHref.startsWith('chrome:') ||
+        lowerHref.startsWith('about:') ||
+        lowerHref.startsWith('#')) {
+        return false;
+    }
+    
+    // Must be HTTP or HTTPS
+    return lowerHref.startsWith('http://') || lowerHref.startsWith('https://');
+}
+
 type CrawlOptions = {
     startUrl: string;
     allowSubdomains: boolean;
@@ -182,6 +208,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     lastModified: response?.headers?.['last-modified'] || response?.responseHeaders?.['last-modified'] || null,
                     statusCode: response.statusCode,
                     responseTime: 0,
+                    wordCount: 0,
                     timestamp: new Date().toISOString(),
                     success: false,
                     errorMessage: `HTTP ${response.statusCode} Error`
@@ -200,6 +227,13 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             const metaContentType = $('meta[http-equiv="Content-Type"]').attr('content');
             const resolvedContentType = headerContentType || metaContentType || 'text/html';
 
+            // Compute word count from a cloned DOM to avoid affecting link extraction
+            const cheerio = await import('cheerio');
+            const $clone = cheerio.load($.html());
+            $clone('script, style, noscript, meta, link').remove();
+            const textContent = $clone('body').text().trim();
+            const wordCount = textContent ? textContent.split(/\s+/).length : 0;
+
             // Record the page data
             const pageId = db.insertPage({
                 sessionId,
@@ -210,6 +244,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 lastModified: response?.headers?.['last-modified'] || response?.responseHeaders?.['last-modified'] || null,
                 statusCode: response?.statusCode || 200,
                 responseTime: responseTime,
+                wordCount,
                 timestamp: new Date().toISOString(),
                 success: true,
                 errorMessage: null
@@ -246,6 +281,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     } catch {
                         return;
                     }
+                    if (!isValidHttpLink(absolute)) return;
                     const canon = canonicalizeUrl(absolute, {
                         allowedHost,
                         allowSubdomains,
@@ -378,6 +414,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 lastModified: null,
                 statusCode: 0,
                 responseTime: responseTime,
+                wordCount: 0,
                 timestamp: new Date().toISOString(),
                 success: false,
                 errorMessage: (error as Error).message
@@ -462,6 +499,18 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             const resolvedJsContentType = mainContentType || docContentType || metaHttpEquiv || 'text/html';
             const resolvedJsStatus = typeof mainStatus === 'number' && mainStatus > 0 ? mainStatus : 200;
 
+            // Compute word count from a cloned DOM to avoid affecting link extraction
+            const wordCount = await page.evaluate(() => {
+                try {
+                    const body = document.body;
+                    if (!body) return 0;
+                    const clone = body.cloneNode(true) as HTMLElement;
+                    clone.querySelectorAll('script, style, noscript, meta, link').forEach(el => el.remove());
+                    const text = (clone.innerText || clone.textContent || '').trim();
+                    return text ? text.split(/\s+/).length : 0;
+                } catch { return 0; }
+            });
+
             const pageId = db.insertPage({
                 sessionId,
                 url,
@@ -471,6 +520,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 lastModified: null,
                 statusCode: resolvedJsStatus,
                 responseTime: responseTime,
+                wordCount,
                 timestamp: new Date().toISOString(),
                 success: true,
                 errorMessage: null
@@ -594,6 +644,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 } catch {
                     continue;
                 }
+                if (!isValidHttpLink(absolute)) continue;
                 
                 // Check if it's external
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
@@ -647,6 +698,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 lastModified: null,
                 statusCode: 0,
                 responseTime: responseTime,
+                wordCount: 0,
                 timestamp: new Date().toISOString(),
                 success: false,
                 errorMessage: (error as Error).message

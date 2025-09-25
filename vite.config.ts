@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    watch:{
+      ignored: ['**/storage/**', '**/dist/**', '**/node_modules/**']
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3004',
@@ -22,7 +25,7 @@ export default defineConfig({
         target: 'http://localhost:3004',
         changeOrigin: true,
         secure: false,
-        timeout: 60000,
+        timeout: 0,
         ws: false,
         headers: {
           Connection: 'keep-alive',

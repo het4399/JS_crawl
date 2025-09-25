@@ -15,6 +15,7 @@ interface CrawlData {
   sessionId?: number;
   scheduleId?: number;
   scheduleName?: string;
+  wordCount?: number;
 }
 
 interface DataViewerProps {
@@ -306,6 +307,9 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                 <th onClick={() => handleSort('responseTime')} className="sortable">
                   Response Time {sortField === 'responseTime' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
+                <th onClick={() => handleSort('wordCount' as keyof CrawlData)} className="sortable">
+                  Word Count {sortField === 'wordCount' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
                 <th onClick={() => handleSort('timestamp')} className="sortable">
                   Timestamp {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -345,6 +349,9 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                   </td>
                   <td className="response-time-cell">
                     {formatResponseTime(item.responseTime || 0)}
+                  </td>
+                  <td className="word-count-cell">
+                    {item.wordCount ?? '—'}
                   </td>
                   <td className="timestamp-cell">
                     {formatTimestamp(item.timestamp || new Date().toISOString())}

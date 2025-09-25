@@ -26,6 +26,7 @@ export interface Page {
     lastModified: string | null;
     statusCode: number;
     responseTime: number;
+    wordCount: number;
     timestamp: string;
     success: boolean;
     errorMessage: string | null;
@@ -138,6 +139,7 @@ export class DatabaseService {
                 last_modified TEXT,
                 status_code INTEGER NOT NULL,
                 response_time INTEGER NOT NULL,
+                word_count INTEGER NOT NULL DEFAULT 0,
                 timestamp TEXT NOT NULL,
                 success INTEGER NOT NULL,
                 error_message TEXT,
@@ -235,6 +237,7 @@ export class DatabaseService {
         // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
         try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
+        try { this.db.exec('ALTER TABLE pages ADD COLUMN word_count INTEGER DEFAULT 0'); } catch {}
         try { this.db.exec('ALTER TABLE crawl_sessions ADD COLUMN schedule_id INTEGER'); } catch {}
 
         // Create indexes for better performance
@@ -398,8 +401,8 @@ export class DatabaseService {
     insertPage(data: Omit<Page, 'id'>): number {
         const stmt = this.db.prepare(`
             INSERT INTO pages 
-            (session_id, url, title, description, content_type, last_modified, status_code, response_time, timestamp, success, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (session_id, url, title, description, content_type, last_modified, status_code, response_time, word_count, timestamp, success, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = stmt.run(
@@ -411,6 +414,7 @@ export class DatabaseService {
             data.lastModified,
             data.statusCode,
             data.responseTime,
+            data.wordCount ?? 0,
             data.timestamp,
             data.success ? 1 : 0,
             data.errorMessage
@@ -496,6 +500,7 @@ export class DatabaseService {
             lastModified: row.last_modified,
             statusCode: row.status_code,
             responseTime: row.response_time,
+            wordCount: row.word_count ?? 0,
             timestamp: row.timestamp,
             success: Boolean(row.success),
             errorMessage: row.error_message,
