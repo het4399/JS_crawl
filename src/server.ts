@@ -7,6 +7,7 @@ import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
+import { getDatabase } from './database/DatabaseService.js';
 
 type Client = {
     id: number;
@@ -208,6 +209,20 @@ app.post('/crawl', async (req, res) => {
         new URL(safeUrl);
     } catch {
         return res.status(400).json({ error: 'Invalid URL. Please include a valid domain (e.g. https://example.com)' });
+    }
+
+    // Block manual crawl if the same URL is already running
+    try {
+        const db = getDatabase();
+        const running = db.getRunningSessionByUrl(safeUrl);
+        if (running) {
+            return res.status(409).json({
+                error: 'A crawl for this URL is already running',
+                runningSession: { id: running.id, startedAt: (running as any).started_at ?? running.startedAt },
+            });
+        }
+    } catch (e) {
+        logger.warn('Failed to check running session before manual crawl', e as Error);
     }
 
     const requestId = `crawl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

@@ -3,6 +3,7 @@ import { Logger } from '../logging/Logger.js';
 import { runCrawl } from '../crawler.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { CronParser } from './CronParser.js';
+import { Mailer } from '../utils/Mailer.js';
 
 export interface SchedulerConfig {
     checkIntervalMs: number;
@@ -15,6 +16,7 @@ export class SchedulerService {
     private scheduleManager: ScheduleManager;
     private logger: Logger;
     private metricsCollector: MetricsCollector;
+    private mailer: Mailer;
     private config: SchedulerConfig;
     private isRunning: boolean = false;
     private intervalId: NodeJS.Timeout | null = null;
@@ -30,6 +32,7 @@ export class SchedulerService {
         this.logger = Logger.getInstance();
         this.metricsCollector = new MetricsCollector();
         this.config = config;
+        this.mailer = Mailer.getInstance();
     }
     
     /**
@@ -42,7 +45,23 @@ export class SchedulerService {
         }
         
         this.isRunning = true;
-        this.logger.info('Starting scheduler service', { config: this.config });
+		this.logger.info('Starting scheduler service', { config: this.config });
+
+		// Log time context for cron vs stored timestamps
+		try {
+			const localTime = new Date().toString();
+			const utcTime = new Date().toISOString();
+			// Intl timezone may not be available in all environments, so wrap in try
+			let timeZone: string | undefined;
+			try {
+				timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			} catch {}
+			this.logger.info('Cron uses server local time; stored timestamps are UTC (ISO)', {
+				timeZone: timeZone || 'unknown',
+				serverTimeLocal: localTime,
+				serverTimeUTC: utcTime,
+			});
+		} catch {}
         
         // Check for schedules immediately
         this.checkSchedules();
@@ -138,6 +157,12 @@ export class SchedulerService {
                 name: schedule.name,
                 startUrl: schedule.startUrl 
             });
+
+            // Notify start
+            void this.mailer.send(
+                `Crawler started: ${schedule.name}`,
+                `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStarted: ${new Date().toString()}\nMode: ${schedule.mode}\nConcurrency: ${schedule.maxConcurrency}`
+            );
             
             // Run the crawl first
             await runCrawl({
@@ -180,6 +205,12 @@ export class SchedulerService {
                     pagesCrawled,
                     resourcesFound
                 });
+
+                // Notify success
+                void this.mailer.send(
+                    `Crawler completed: ${schedule.name}`,
+                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: completed\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`
+                );
             }
             
             // Calculate next run time
@@ -229,6 +260,12 @@ export class SchedulerService {
                     pagesCrawled,
                     resourcesFound
                 });
+
+                // Notify failure
+                void this.mailer.send(
+                    `Crawler failed: ${schedule.name}`,
+                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: failed\nError: ${(error as Error).message}\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`
+                );
             }
             
             // Calculate next run time

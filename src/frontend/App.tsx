@@ -28,6 +28,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
+  const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
@@ -346,7 +347,7 @@ function App() {
       </main>
 
       {showDataViewer && (
-        <DataViewer onClose={() => setShowDataViewer(false)} />
+        <DataViewer onClose={() => setShowDataViewer(false)} initialSessionId={initialViewerSessionId} />
       )}
 
 
@@ -377,8 +378,24 @@ function App() {
             </div>
             <div className="actions">
               <button className="btn btn-secondary" onClick={() => setShowReusePrompt(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={async () => { setShowReusePrompt(false); setShowDataViewer(true); }}>📊 View Last Results</button>
-              <button className="btn" onClick={async () => { setShowReusePrompt(false); await startCrawl(); }}>🔁 Recrawl Now</button>
+              {recentStatus?.running ? (
+                <button className="btn btn-primary" onClick={async () => {
+                  setShowReusePrompt(false);
+                  const runningId = recentStatus?.running?.id ?? null;
+                  setInitialViewerSessionId(runningId);
+                  setShowDataViewer(true);
+                }}>📡 View Current Run</button>
+              ) : (
+                <>
+                  <button className="btn btn-primary" onClick={async () => {
+                    setShowReusePrompt(false);
+                    const lastId = recentStatus?.latest?.id ?? null;
+                    setInitialViewerSessionId(lastId);
+                    setShowDataViewer(true);
+                  }}>📊 View Last Results</button>
+                  <button className="btn" onClick={async () => { setShowReusePrompt(false); await startCrawl(); }}>🔁 Recrawl Now</button>
+                </>
+              )}
             </div>
           </div>
         </div>

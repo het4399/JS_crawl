@@ -20,9 +20,10 @@ interface CrawlData {
 
 interface DataViewerProps {
   onClose: () => void;
+  initialSessionId?: number | null;
 }
 
-const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
+const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) => {
   const [data, setData] = useState<CrawlData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,12 +35,21 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
   const [serverOffset, setServerOffset] = useState(0);
   const [serverLimit] = useState(1000);
   const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; scheduleId?: number }>>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>('all');
+  const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>(initialSessionId ?? 'all');
 
   useEffect(() => {
     loadSessions();
     loadData();
   }, []);
+
+  // When initialSessionId changes on open, set the selected session and reload
+  useEffect(() => {
+    if (initialSessionId && initialSessionId !== 'all') {
+      setSelectedSessionId(initialSessionId);
+      setServerOffset(0);
+      loadData();
+    }
+  }, [initialSessionId]);
 
   const loadData = async (opts?: { append?: boolean }) => {
     try {
