@@ -101,6 +101,16 @@ export interface ScheduleExecution {
 export class DatabaseService {
     private db: Database.Database;
     private logger: Logger;
+    
+    /** Ensure we only persist real HTTP/HTTPS URLs in resources */
+    private isHttpUrl(u: string): boolean {
+        try {
+            const parsed = new URL(u);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch {
+            return false;
+        }
+    }
 
     constructor(dbPath: string = 'storage/crawler.db') {
         this.logger = Logger.getInstance();
@@ -424,6 +434,10 @@ export class DatabaseService {
     }
 
     insertResource(data: Omit<Resource, 'id'>): number {
+        // Skip non-HTTP(S) resources like mailto:, javascript:, tel:
+        if (!this.isHttpUrl(data.url)) {
+            return 0 as unknown as number;
+        }
         const stmt = this.db.prepare(`
             INSERT INTO resources 
             (session_id, page_id, url, resource_type, title, description, content_type, status_code, response_time, timestamp)
@@ -447,6 +461,10 @@ export class DatabaseService {
     }
 
     upsertResource(data: Omit<Resource, 'id'>): void {
+        // Skip non-HTTP(S) resources like mailto:, javascript:, tel:
+        if (!this.isHttpUrl(data.url)) {
+            return;
+        }
         const stmt = this.db.prepare(`
             INSERT INTO resources (session_id, page_id, url, resource_type, title, description, content_type, status_code, response_time, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

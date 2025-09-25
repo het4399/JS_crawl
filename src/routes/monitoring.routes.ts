@@ -114,14 +114,21 @@ router.delete('/metrics', (req, res) => {
 // Export crawl data
 router.get('/export', async (req, res) => {
   try {
-    const { format = 'json', limit } = req.query;
-    logger.info('Export request received', { format, limit });
+    const { format = 'json', limit, sessionId } = req.query;
+    logger.info('Export request received', { format, limit, sessionId });
     
     const db = getDatabase();
     const limitNum = limit ? parseInt(limit as string) : undefined;
+    const sessionIdNum = sessionId ? parseInt(sessionId as string) : undefined;
 
-    const pages = db.getPages(undefined, limitNum || 10000, 0);
-    const resources = db.getResources(undefined, undefined, limitNum || 10000, 0);
+    const pages = db.getPages(sessionIdNum, limitNum || 10000, 0).map((p: any) => {
+      const { id, sessionId, ...rest } = p;
+      return rest;
+    });
+    const resources = db.getResources(sessionIdNum, undefined, limitNum || 10000, 0).map((r: any) => {
+      const { id, sessionId, pageId, ...rest } = r;
+      return rest;
+    });
     const items = [...pages, ...resources];
     
     if (!items || items.length === 0) {
@@ -130,7 +137,7 @@ router.get('/export', async (req, res) => {
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `crawl-results-${timestamp}`;
+    const filename = `crawl-results${sessionIdNum ? `-session-${sessionIdNum}` : ''}-${timestamp}`;
 
     switch (format) {
       case 'csv': {
@@ -159,7 +166,7 @@ router.get('/export', async (req, res) => {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
         res.json({
-          exportInfo: { timestamp: new Date().toISOString(), totalUrls: items.length, format: 'json' },
+          exportInfo: { timestamp: new Date().toISOString(), totalUrls: items.length, format: 'json', sessionId: sessionIdNum ?? null },
           urls: items,
         });
       }
@@ -302,10 +309,8 @@ router.get('/data/list', async (req, res) => {
     }
     
     const allData = [...pages, ...resources]
-      .map((item: any) => {
-        const info = db.getScheduleInfoForSession(item.sessionId ?? item.session_id);
-        return { ...item, scheduleId: info.scheduleId, scheduleName: info.scheduleName, sessionId: item.sessionId ?? item.session_id };
-      })
+      // Do not add schedule/session fields to the payload; keep only core item fields
+      .map((item: any) => ({ ...item }))
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const totalPages = db.getPageCount(sessionId);

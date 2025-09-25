@@ -377,6 +377,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 if (!href) return;
                 let absolute: string;
                 try { absolute = new URL(href, url).toString(); } catch { return; }
+                // Only track real HTTP/HTTPS links
+                if (!isValidHttpLink(absolute)) return;
                 if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
                     if (emittedExternal.has(absolute)) return;
                         emittedExternal.add(absolute);

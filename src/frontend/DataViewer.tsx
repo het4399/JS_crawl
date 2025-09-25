@@ -121,14 +121,19 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
 
   const exportData = async (format: string) => {
     try {
-      const response = await fetch(`/api/export?format=${format}`);
+      const params = new URLSearchParams();
+      params.set('format', format);
+      if (selectedSessionId !== 'all') {
+        params.set('sessionId', String(selectedSessionId));
+      }
+      const response = await fetch(`/api/export?${params.toString()}`);
       if (!response.ok) throw new Error('Export failed');
       
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `crawl-data-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${format}`;
+      a.download = `crawl-data${selectedSessionId !== 'all' ? `-session-${selectedSessionId}` : ''}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -280,12 +285,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                 <th onClick={() => handleSort('url')} className="sortable">
                   URL {sortField === 'url' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th>
-                  Schedule
-                </th>
-                <th>
-                  Session
-                </th>
+                {/* Schedule and Session columns removed per request */}
                 <th onClick={() => handleSort('title')} className="sortable">
                   Title {sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -323,12 +323,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose }) => {
                       {item.url || 'No URL'}
                     </a>
                   </td>
-                  <td className="schedule-cell" title={item.scheduleName || (item.scheduleId ? `Schedule #${item.scheduleId}` : 'Unknown')}>
-                    {item.scheduleName || (item.scheduleId ? `#${item.scheduleId}` : '—')}
-                  </td>
-                  <td className="session-cell">
-                    {item.sessionId ?? '—'}
-                  </td>
+                  {/* Schedule and Session cells removed; filtering remains via dropdown */}
                   <td className="title-cell" title={item.title || 'No title'}>
                     {item.title || 'No title'}
                   </td>
