@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "build:frontend": "vite build",
     "crawl": "tsx src/index.ts",
-    "serve": "tsx src/server.ts"
+    "serve": "tsx src/server.ts",
+    "audits:worker": "tsx src/audits/worker.ts"
   },
   "keywords": [],
   "author": "",

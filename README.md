@@ -32,4 +32,20 @@ DENY_PARAMS=utm_,session,sort,filter,ref,fbclid,gclid
 - This crawler is HTML-only (no Playwright). Enable a browser only if needed for JS-rendered links.
 - It respects robots.txt and uses sitemaps if present.
 
+### Audits (PSI integration – Phase -1/0)
+
+We will integrate Google PageSpeed Insights (PSI) to collect Core Web Vitals without slowing the crawl.
+
+Setup
+
+1. Obtain a PSI API key from Google Cloud.
+2. Set the environment variable `PSI_API_KEY` in your shell/CI (do not commit secrets).
+3. Review `config/audits.json` for defaults (mobile-first, concurrency=12, TTL=24h, URL eligibility).
+
+Behavior
+
+- Audits are processed by separate workers and do not run inline during crawling.
+- Robots.txt and `noindex` are honored; URLs are canonicalized and deduplicated.
+- Parsed metrics are stored per URL; raw PSI responses may be retained for 7 days.
+
 

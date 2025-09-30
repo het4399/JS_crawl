@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import DataViewer from './DataViewer';
+import AuditsPage from './AuditsPage';
 import ScheduleList from './ScheduleList';
 import CronHistory from './CronHistory';
 
@@ -29,7 +30,7 @@ function App() {
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history'>('crawl');
+  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
@@ -213,6 +214,12 @@ function App() {
           >
             📜 Cron History
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'audits' ? 'active' : ''}`}
+            onClick={() => setActiveTab('audits')}
+          >
+            📈 Audits
+          </button>
         </div>
 
         {activeTab === 'crawl' && (
@@ -343,6 +350,10 @@ function App() {
 
         {activeTab === 'history' && (
           <CronHistory onClose={() => setActiveTab('crawl')} />
+        )}
+
+        {activeTab === 'audits' && (
+          <AuditsPage />
         )}
       </main>
 

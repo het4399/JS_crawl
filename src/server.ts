@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { runCrawl } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
+import { auditsRoutes } from './routes/audits.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
@@ -29,6 +30,7 @@ app.use(express.static(distFrontendPath));
 
 // Add monitoring routes
 app.use('/api', monitoringRoutes);
+app.use('/api', auditsRoutes);
 
 // Schedule management routes
 app.get('/api/schedules', (req, res) => {

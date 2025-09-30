@@ -4,6 +4,7 @@ import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
 import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 import { SitemapService } from './sitemap/SitemapService.js';
+import { initAuditEnqueue, maybeEnqueueAudit } from './audits/enqueue.js';
 
 /**
  * Check if a URL is a valid HTTP/HTTPS link that should be processed
@@ -63,6 +64,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
     log.info(startMsg);
     onLog?.(startMsg);
+        // Initialize audits enqueue with the crawl's origin
+        try { initAuditEnqueue(start.href); } catch {}
     } catch (error) {
         const errorMsg = `Invalid start URL: ${startUrl}`;
         logger.error(errorMsg, error as Error);
@@ -254,6 +257,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             db.markSitemapUrlAsCrawled(sessionId, url);
             
             onPage?.(url);
+            // Enqueue for audits if eligible (non-blocking)
+            try { maybeEnqueueAudit(url, resolvedContentType); } catch {}
             
             // Record successful request in metrics
             if (metricsCollector) {
