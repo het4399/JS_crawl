@@ -1154,19 +1154,31 @@ export class DatabaseService {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
+        // Normalize values for SQLite binding:
+        // - Booleans to integers (1/0)
+        // - undefined to null
+        const normalizedEnabled = data.enabled ? 1 : 0;
+        const normalizedDescription = data.description ?? null;
+        const normalizedUrls = data.urls; // expected to be a JSON string already
+        const normalizedLastRun = data.lastRun ?? null;
+        const normalizedNextRun = data.nextRun ?? null;
+        const normalizedTotalRuns = data.totalRuns ?? 0;
+        const normalizedSuccessfulRuns = data.successfulRuns ?? 0;
+        const normalizedFailedRuns = data.failedRuns ?? 0;
+
         const result = stmt.run(
             data.name,
-            data.description,
-            data.urls,
+            normalizedDescription,
+            normalizedUrls,
             data.device,
             data.cronExpression,
-            data.enabled,
+            normalizedEnabled,
             data.createdAt,
-            data.lastRun,
-            data.nextRun,
-            data.totalRuns,
-            data.successfulRuns,
-            data.failedRuns
+            normalizedLastRun,
+            normalizedNextRun,
+            normalizedTotalRuns,
+            normalizedSuccessfulRuns,
+            normalizedFailedRuns
         );
         
         return result.lastInsertRowid as number;

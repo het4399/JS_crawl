@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './AuditScheduleManager.css';
+import './ScheduleList.css';
 
 interface AuditSchedule {
   id: number;
@@ -193,18 +194,18 @@ export default function AuditScheduleManager() {
   };
 
   if (loading) {
-    return <div className="audit-schedule-manager">Loading...</div>;
+    return <div className="schedule-list loading">Loading...</div>;
   }
 
   return (
-    <div className="audit-schedule-manager">
-      <div className="header">
-        <h2>Audit Schedule Manager</h2>
+    <div className="schedule-list">
+      <div className="schedule-header">
+        <h2>Audit Schedules</h2>
         <button 
           className="btn btn-primary"
           onClick={() => setShowForm(true)}
         >
-          Create New Schedule
+          + New Schedule
         </button>
       </div>
 
@@ -216,98 +217,100 @@ export default function AuditScheduleManager() {
       )}
 
       {showForm && (
-        <div className="form-overlay">
-          <div className="form-container">
-            <h3>{editingSchedule ? 'Edit' : 'Create'} Audit Schedule</h3>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  required
-                />
-              </div>
-              
-              <div className="form-group">
-                <label>Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  required
-                />
-              </div>
-              
-              <div className="form-group">
-                <label>URLs (one per line)</label>
-                <textarea
-                  value={formData.urls}
-                  onChange={(e) => setFormData({...formData, urls: e.target.value})}
-                  placeholder="https://example.com&#10;https://example.com/page1&#10;https://example.com/page2"
-                  required
-                  rows={5}
-                />
-              </div>
-              
-              <div className="form-group">
-                <label>Device</label>
-                <select
-                  value={formData.device}
-                  onChange={(e) => setFormData({...formData, device: e.target.value as 'mobile' | 'desktop'})}
-                >
-                  <option value="desktop">Desktop</option>
-                  <option value="mobile">Mobile</option>
-                </select>
-              </div>
-              
-              <div className="form-group">
-                <label>Cron Expression</label>
-                <input
-                  type="text"
-                  value={formData.cronExpression}
-                  onChange={(e) => setFormData({...formData, cronExpression: e.target.value})}
-                  placeholder="0 0 * * * (daily at midnight)"
-                  required
-                />
-                <small>Format: minute hour day month weekday</small>
-              </div>
-              
-              <div className="form-group">
-                <label>
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="form-container">
+              <h3>{editingSchedule ? 'Edit' : 'Create'} Audit Schedule</h3>
+              <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                  <label>Name</label>
                   <input
-                    type="checkbox"
-                    checked={formData.enabled}
-                    onChange={(e) => setFormData({...formData, enabled: e.target.checked})}
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    required
                   />
-                  Enabled
-                </label>
-              </div>
-              
-              <div className="form-actions">
-                <button type="submit" className="btn btn-primary">
-                  {editingSchedule ? 'Update' : 'Create'} Schedule
-                </button>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingSchedule(null);
-                    setFormData({
-                      name: '',
-                      description: '',
-                      urls: '',
-                      device: 'desktop',
-                      cronExpression: '0 0 * * *',
-                      enabled: true
-                    });
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+                </div>
+                
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>URLs (one per line)</label>
+                  <textarea
+                    value={formData.urls}
+                    onChange={(e) => setFormData({...formData, urls: e.target.value})}
+                    placeholder="https://example.com&#10;https://example.com/page1&#10;https://example.com/page2"
+                    required
+                    rows={5}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Device</label>
+                  <select
+                    value={formData.device}
+                    onChange={(e) => setFormData({...formData, device: e.target.value as 'mobile' | 'desktop'})}
+                  >
+                    <option value="desktop">Desktop</option>
+                    <option value="mobile">Mobile</option>
+                  </select>
+                </div>
+                
+                <div className="form-group">
+                  <label>Cron Expression</label>
+                  <input
+                    type="text"
+                    value={formData.cronExpression}
+                    onChange={(e) => setFormData({...formData, cronExpression: e.target.value})}
+                    placeholder="0 0 * * * (daily at midnight)"
+                    required
+                  />
+                  <small>Format: minute hour day month weekday</small>
+                </div>
+                
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={formData.enabled}
+                      onChange={(e) => setFormData({...formData, enabled: e.target.checked})}
+                    />
+                    Enabled
+                  </label>
+                </div>
+                
+                <div className="form-actions">
+                  <button type="submit" className="btn btn-primary">
+                    {editingSchedule ? 'Update' : 'Create'} Schedule
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setShowForm(false);
+                      setEditingSchedule(null);
+                      setFormData({
+                        name: '',
+                        description: '',
+                        urls: '',
+                        device: 'desktop',
+                        cronExpression: '0 0 * * *',
+                        enabled: true
+                      });
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -317,62 +320,68 @@ export default function AuditScheduleManager() {
         {schedules.length === 0 ? (
           <p>No audit schedules found. Create one to get started.</p>
         ) : (
-          <div className="schedules-grid">
+          <div className="schedule-grid">
             {schedules.map(schedule => (
-              <div key={schedule.id} className="schedule-card">
+              <div 
+                key={schedule.id} 
+                className={`schedule-card ${schedule.enabled ? 'enabled' : 'disabled'}`}
+              >
                 <div className="schedule-header">
-                  <h4>{schedule.name}</h4>
-                  <div className="schedule-actions">
-                    <button 
-                      className="btn btn-sm"
-                      onClick={() => handleToggle(schedule.id)}
-                    >
-                      {schedule.enabled ? 'Disable' : 'Enable'}
-                    </button>
-                    <button 
-                      className="btn btn-sm btn-primary"
-                      onClick={() => handleTrigger(schedule.id)}
-                    >
-                      Run Now
-                    </button>
-                    <button 
-                      className="btn btn-sm"
-                      onClick={() => handleEdit(schedule)}
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className="btn btn-sm btn-danger"
-                      onClick={() => handleDelete(schedule.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-                
-                <p className="schedule-description">{schedule.description}</p>
-                
-                <div className="schedule-details">
-                  <div><strong>Device:</strong> {schedule.device}</div>
-                  <div><strong>Cron:</strong> {schedule.cronExpression}</div>
-                  <div><strong>URLs:</strong> {schedule.urls.length}</div>
-                  <div><strong>Status:</strong> 
-                    <span className={`status ${schedule.enabled ? 'enabled' : 'disabled'}`}>
-                      {schedule.enabled ? 'Enabled' : 'Disabled'}
+                  <h3>{schedule.name}</h3>
+                  <div className="schedule-status">
+                    <span className={`status-indicator ${schedule.enabled ? 'active' : 'inactive'}`}>
+                      {schedule.enabled ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                 </div>
-                
+
+                <div className="schedule-info">
+                  <p className="description">{schedule.description}</p>
+                  <p className="url">URLs: {schedule.urls.length}</p>
+                  <p className="cron">Schedule: {schedule.cronExpression}</p>
+                  <p className="mode">Device: {schedule.device.toUpperCase()}</p>
+                </div>
+
                 <div className="schedule-stats">
-                  <div>Total Runs: {schedule.totalRuns}</div>
-                  <div>Successful: {schedule.successfulRuns}</div>
-                  <div>Failed: {schedule.failedRuns}</div>
-                  {schedule.lastRun && (
-                    <div>Last Run: {formatDate(schedule.lastRun)}</div>
-                  )}
-                  {schedule.nextRun && (
-                    <div>Next Run: {formatDate(schedule.nextRun)}</div>
-                  )}
+                  <div className="stat">
+                    <span className="label">Runs:</span>
+                    <span className="value">{schedule.totalRuns}</span>
+                  </div>
+                  <div className="stat">
+                    <span className="label">Success:</span>
+                    <span className="value success">{schedule.successfulRuns}</span>
+                  </div>
+                  <div className="stat">
+                    <span className="label">Failed:</span>
+                    <span className="value error">{schedule.failedRuns}</span>
+                  </div>
+                </div>
+
+                <div className="schedule-actions">
+                  <button 
+                    className="btn btn-sm"
+                    onClick={() => handleToggle(schedule.id)}
+                  >
+                    {schedule.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleTrigger(schedule.id)}
+                  >
+                    Run Now
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleEdit(schedule)}
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-danger"
+                    onClick={() => handleDelete(schedule.id)}
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}

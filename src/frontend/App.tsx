@@ -98,8 +98,16 @@ function App() {
       });
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
       
-      // Don't set crawling to false here - let audit events handle it
-      // This prevents the button from being enabled during audits
+      // If audits are not enabled, we're done immediately
+      if (!runAudits) {
+        console.log('Crawl done without audits - setting states to false');
+        setIsCrawling(false);
+        setIsAuditing(false);
+        if (auditTimeoutRef.current) {
+          clearTimeout(auditTimeoutRef.current);
+        }
+      }
+      // If audits are enabled, let audit events handle the state transition
     });
 
     eventSource.addEventListener('audit-start', (e) => {
