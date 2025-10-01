@@ -54,6 +54,17 @@ type CrawlEvents = {
     onAuditResults?: (results: any) => void;
 };
 
+// Global flag to control audit cancellation
+let auditCancelled = false;
+
+export function cancelAudits(): void {
+    auditCancelled = true;
+}
+
+export function resetAuditCancellation(): void {
+    auditCancelled = false;
+}
+
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
     const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId, runAudits = false, auditDevice = 'desktop' } = options;
     const { onLog, onPage, onDone, onAuditStart, onAuditComplete, onAuditResults } = events;
@@ -804,15 +815,39 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 onLog?.(`Running audits for ${urlsToAudit.length} URLs...`);
                 
                 // Process audits in parallel batches to speed up execution
-                const batchSize = 3; // Process 3 audits simultaneously
+                // Dynamic batch size based on total URLs for optimal performance
+                const totalUrls = urlsToAudit.length;
+                let batchSize = 3; // Default for small sites
+                
+                if (totalUrls > 50) {
+                    batchSize = 5; // Larger batches for big sites
+                } else if (totalUrls > 20) {
+                    batchSize = 4; // Medium batches for medium sites
+                }
+                
                 const batches = [];
                 
                 for (let i = 0; i < urlsToAudit.length; i += batchSize) {
                     const batch = urlsToAudit.slice(i, i + batchSize);
                     batches.push(batch);
                 }
+                
+                const setupMsg = `🚀 Processing ${totalUrls} audits in ${batches.length} batches of ${batchSize} (parallel execution)`;
+                log.info(setupMsg);
+                onLog?.(setupMsg);
+                
+                const startTime = Date.now();
+                let completedAudits = 0;
 
                 for (const batch of batches) {
+                    // Check if audits have been cancelled
+                    if (auditCancelled) {
+                        const cancelMsg = '🛑 Audit process cancelled by user';
+                        log.info(cancelMsg);
+                        onLog?.(cancelMsg);
+                        break;
+                    }
+                    
                     // Process batch in parallel
                     const batchPromises = batch.map(async (url) => {
                         try {
@@ -844,17 +879,51 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     // Wait for batch to complete
                     await Promise.all(batchPromises);
                     
-                    // Small delay between batches to avoid overwhelming the API
-                    if (batches.indexOf(batch) < batches.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    // Check for cancellation after batch completion
+                    if (auditCancelled) {
+                        const cancelMsg = '🛑 Audit process cancelled by user';
+                        log.info(cancelMsg);
+                        onLog?.(cancelMsg);
+                        break;
+                    }
+                    
+                    // Update progress tracking
+                    completedAudits += batch.length;
+                    const batchIndex = batches.indexOf(batch);
+                    const progress = Math.round((completedAudits / totalUrls) * 100);
+                    const elapsed = Math.round((Date.now() - startTime) / 1000);
+                    const estimatedTotal = Math.round((elapsed / completedAudits) * totalUrls);
+                    const remaining = Math.max(0, estimatedTotal - elapsed);
+                    
+                    const progressMsg = `📊 Progress: ${completedAudits}/${totalUrls} (${progress}%) | Elapsed: ${elapsed}s | ETA: ${remaining}s`;
+                    log.info(progressMsg);
+                    onLog?.(progressMsg);
+                    
+                    // Smart delay between batches - shorter delays for better performance
+                    if (batchIndex < batches.length - 1) {
+                        // Reduce delay based on batch size and progress
+                        const baseDelay = batchSize > 4 ? 500 : 750; // Shorter delays for larger batches
+                        const progressDelay = Math.max(200, baseDelay - (batchIndex * 50)); // Decreasing delays
+                        await new Promise(resolve => setTimeout(resolve, progressDelay));
                     }
                 }
 
                 // Get and report final audit results
+                const totalTime = Math.round((Date.now() - startTime) / 1000);
+                const auditsPerMinute = Math.round((totalUrls / totalTime) * 60);
+                
                 const auditStats = auditIntegration.getAuditStats();
                 const auditResultsMsg = `📊 Audit Results: ${auditStats.successful}/${auditStats.total} successful (${auditStats.successRate.toFixed(1)}% success rate)`;
                 log.info(auditResultsMsg);
                 onLog?.(auditResultsMsg);
+                
+                // Performance summary
+                const performanceMsg = `⚡ Performance: ${totalTime}s total | ${auditsPerMinute} audits/min | ${batchSize} parallel`;
+                log.info(performanceMsg);
+                onLog?.(performanceMsg);
+                
+                // Debug: Log batch completion
+                log.info(`Batch processing completed: ${batches.length} batches processed`);
                 
                 if (auditStats.averageLcp > 0) {
                     onLog?.(`📈 Average LCP: ${Math.round(auditStats.averageLcp)}ms`);

@@ -209,6 +209,48 @@ function App() {
     };
   }, []);
 
+  const cancelAuditProcess = async () => {
+    try {
+      console.log('Sending cancel request...');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      // Try both endpoints
+      let response;
+      try {
+        response = await fetch('/api/cancel-audits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal
+        });
+      } catch (error) {
+        console.log('First endpoint failed, trying API endpoint...');
+        response = await fetch('/api/cancel-audits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal
+        });
+      }
+      
+      clearTimeout(timeoutId);
+      
+      console.log('Cancel response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Cancel response data:', data);
+        setLogs(prev => [...prev, '🛑 Audit cancellation requested...']);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Cancel failed:', errorData);
+        setLogs(prev => [...prev, `❌ Failed to cancel audits: ${errorData.error || 'Unknown error'}`]);
+      }
+    } catch (error) {
+      console.error('Cancel request error:', error);
+      setLogs(prev => [...prev, `❌ Error cancelling audits: ${(error as Error).message}`]);
+    }
+  };
+
   const startCrawl = async () => {
     if (!url.trim()) {
       setLogs(prev => [...prev, '❌ Please enter a URL to crawl']);
@@ -523,6 +565,15 @@ function App() {
               >
                 {isCrawling ? (isAuditing ? '🔍 Auditing...' : '⏳ Crawling...') : '🚀 Start Crawl'}
               </button>
+
+              {isAuditing && (
+                <button
+                  onClick={cancelAuditProcess}
+                  className="cancel-btn"
+                >
+                  🛑 Cancel Audits
+                </button>
+              )}
 
               <button
                 onClick={() => setShowDataViewer(true)}

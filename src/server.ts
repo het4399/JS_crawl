@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runCrawl } from './crawler.js';
+import { runCrawl, cancelAudits, resetAuditCancellation } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { auditsRoutes } from './routes/audits.routes.js';
 import { Logger } from './logging/Logger.js';
@@ -32,6 +32,58 @@ app.use(express.static(distFrontendPath));
 // Add monitoring routes
 app.use('/api', monitoringRoutes);
 app.use('/api', auditsRoutes);
+
+// Cancel audits endpoint - moved before static file serving
+// app.post('/cancel-audits', (req, res) => {
+//     try {
+//         console.log('Cancel audits endpoint called');
+//         cancelAudits();
+//         logger.info('Audit cancellation requested by user');
+        
+//         const response = { 
+//             message: 'Audit cancellation requested', 
+//             timestamp: new Date().toISOString(),
+//             success: true
+//         };
+        
+//         console.log('Sending response:', response);
+//         res.status(200).json(response);
+//     } catch (error) {
+//         console.error('Error in cancel audits:', error);
+//         logger.error('Failed to cancel audits', error as Error);
+//         res.status(500).json({ 
+//             error: 'Failed to cancel audits', 
+//             details: (error as Error).message,
+//             success: false
+//         });
+//     }
+// });
+
+// Also add it to API routes for consistency
+app.post('/api/cancel-audits', (req, res) => {
+    try {
+        console.log('Cancel audits API endpoint called');
+        cancelAudits();
+        logger.info('Audit cancellation requested by user');
+        
+        const response = { 
+            message: 'Audit cancellation requested', 
+            timestamp: new Date().toISOString(),
+            success: true
+        };
+        
+        console.log('Sending response:', response);
+        res.status(200).json(response);
+    } catch (error) {
+        console.error('Error in cancel audits:', error);
+        logger.error('Failed to cancel audits', error as Error);
+        res.status(500).json({ 
+            error: 'Failed to cancel audits', 
+            details: (error as Error).message,
+            success: false
+        });
+    }
+});
 
 // Schedule management routes
 app.get('/api/schedules', (req, res) => {
