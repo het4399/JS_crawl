@@ -4,6 +4,8 @@ import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { Logger } from '../logging/Logger.js';
 import { RequestQueue } from 'crawlee';
 import { getDatabase } from '../database/DatabaseService.js';
+import fs from 'fs';
+import path from 'path';
 
 const router = Router();
 const healthChecker = new HealthChecker();
@@ -417,7 +419,36 @@ router.delete('/data/clear', async (req, res) => {
     metricsCollector.reset();
     logger.clearLogs();
     
-    res.json({ message: 'All data cleared successfully (database, queue, metrics, and logs)', timestamp: new Date().toISOString() });
+    // Clear audit files from storage
+    try {
+      const auditDir = path.resolve(process.cwd(), 'storage', 'audits');
+      if (fs.existsSync(auditDir)) {
+        const deviceDirs = fs.readdirSync(auditDir);
+        for (const deviceDir of deviceDirs) {
+          const devicePath = path.join(auditDir, deviceDir);
+          if (fs.statSync(devicePath).isDirectory()) {
+            const dateDirs = fs.readdirSync(devicePath);
+            for (const dateDir of dateDirs) {
+              const datePath = path.join(devicePath, dateDir);
+              if (fs.statSync(datePath).isDirectory()) {
+                const files = fs.readdirSync(datePath);
+                for (const file of files) {
+                  fs.unlinkSync(path.join(datePath, file));
+                }
+                fs.rmdirSync(datePath);
+              }
+            }
+            fs.rmdirSync(devicePath);
+          }
+        }
+        fs.rmdirSync(auditDir);
+        logger.info('Audit files cleared from storage');
+      }
+    } catch (error) {
+      logger.warn('Failed to clear audit files', error as Error);
+    }
+    
+    res.json({ message: 'All data cleared successfully (database, queue, metrics, logs, and audit files)', timestamp: new Date().toISOString() });
     logger.info('All data cleared by user request');
   } catch (error) {
     logger.error('Failed to clear data', error as Error);

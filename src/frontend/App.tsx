@@ -4,6 +4,7 @@ import DataViewer from './DataViewer';
 import AuditsPage from './AuditsPage';
 import ScheduleList from './ScheduleList';
 import CronHistory from './CronHistory';
+import AuditScheduleManager from './AuditScheduleManager';
 
 interface CrawlData {
   url: string;
@@ -24,18 +25,34 @@ function App() {
   const [allowSubdomains, setAllowSubdomains] = useState(false);
   const [maxConcurrency, setMaxConcurrency] = useState(50);
   const [mode, setMode] = useState('auto');
+  const [runAudits, setRunAudits] = useState(false);
+  const [auditDevice, setAuditDevice] = useState<'mobile' | 'desktop'>('desktop');
   const [isCrawling, setIsCrawling] = useState(false);
+  const [isAuditing, setIsAuditing] = useState(false);
   const [pageCount, setPageCount] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits'>('crawl');
+  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
     pagesPerSecond: number;
   } | null>(null);
+  const [auditResults, setAuditResults] = useState<any[]>([]);
+  const [auditStats, setAuditStats] = useState<{
+    total: number;
+    successful: number;
+    failed: number;
+    successRate: number;
+    averageLcp: number;
+    averageTbt: number;
+    averageCls: number;
+  } | null>(null);
+
+  // Timeout reference for audit fallback
+  const auditTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showReusePrompt, setShowReusePrompt] = useState(false);
   const [recentStatus, setRecentStatus] = useState<null | {
     running: { id: number; startedAt: string } | null;
@@ -79,11 +96,116 @@ function App() {
         pagesPerSecond: pagesPerSecond
       });
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
-      setIsCrawling(false);
+      
+      // Don't set crawling to false here - let audit events handle it
+      // This prevents the button from being enabled during audits
     });
+
+    eventSource.addEventListener('audit-start', (e) => {
+      const data = JSON.parse(e.data);
+      setLogs(prev => [...prev.slice(-99), `🔍 Starting audit for ${data.url}`]);
+      setIsAuditing(true);
+      // Keep crawling state true during audits
+      setIsCrawling(true);
+    });
+
+    eventSource.addEventListener('audit-complete', (e) => {
+      const data = JSON.parse(e.data);
+      if (data.success) {
+        setLogs(prev => [...prev.slice(-99), `✓ Audit completed for ${data.url} - LCP: ${data.lcp ? Math.round(data.lcp) + 'ms' : 'N/A'}, TBT: ${data.tbt ? Math.round(data.tbt) + 'ms' : 'N/A'}, CLS: ${data.cls ? data.cls.toFixed(3) : 'N/A'}`]);
+      } else {
+        setLogs(prev => [...prev.slice(-99), `✗ Audit failed for ${data.url}`]);
+      }
+    });
+
+    eventSource.addEventListener('audit-results', (e) => {
+      console.log('Received audit-results event:', e.data);
+      const data = JSON.parse(e.data);
+      setAuditResults(data.results);
+      
+      // Calculate audit stats
+      const results = data.results;
+      const successful = results.filter((r: any) => r.success);
+      const successRate = results.length > 0 ? (successful.length / results.length) * 100 : 0;
+      
+      const averageLcp = successful.length > 0 && successful.some((r: any) => r.lcp)
+        ? successful.reduce((sum: number, r: any) => sum + (r.lcp || 0), 0) / successful.filter((r: any) => r.lcp).length
+        : 0;
+        
+      const averageTbt = successful.length > 0 && successful.some((r: any) => r.tbt)
+        ? successful.reduce((sum: number, r: any) => sum + (r.tbt || 0), 0) / successful.filter((r: any) => r.tbt).length
+        : 0;
+        
+      const averageCls = successful.length > 0 && successful.some((r: any) => r.cls)
+        ? successful.reduce((sum: number, r: any) => sum + (r.cls || 0), 0) / successful.filter((r: any) => r.cls).length
+        : 0;
+
+      setAuditStats({
+        total: results.length,
+        successful: successful.length,
+        failed: results.length - successful.length,
+        successRate,
+        averageLcp,
+        averageTbt,
+        averageCls
+      });
+      
+      // Audits are complete, so both crawling and auditing are done
+      console.log('Setting states to false - audits complete');
+      setIsCrawling(false);
+      setIsAuditing(false);
+      if (auditTimeoutRef.current) {
+        clearTimeout(auditTimeoutRef.current);
+      }
+    });
+
+    // Handle case where audits are enabled but no URLs found for auditing
+    eventSource.addEventListener('log', (e) => {
+      const data = JSON.parse(e.data);
+      if (data.message && data.message.includes('No valid URLs found for auditing')) {
+        // No URLs to audit, so we're done
+        setIsCrawling(false);
+        setIsAuditing(false);
+        if (auditTimeoutRef.current) {
+          clearTimeout(auditTimeoutRef.current);
+        }
+      }
+      // Check if audits are starting
+      if (data.message && data.message.includes('Starting performance audits for all')) {
+        setIsAuditing(true);
+        setIsCrawling(true);
+      }
+      // Check if audits are complete based on final summary messages
+      if (data.message && (data.message.includes('📊 Audit Results:') || data.message.includes('📈 Average LCP:') || data.message.includes('📈 Average TBT:') || data.message.includes('📈 Average CLS:'))) {
+        console.log('Detected audit completion from log message:', data.message);
+        // Add a small delay to ensure all audit events are processed
+        setTimeout(() => {
+          console.log('Setting states to false - audits complete (from log detection)');
+          setIsCrawling(false);
+          setIsAuditing(false);
+          if (auditTimeoutRef.current) {
+            clearTimeout(auditTimeoutRef.current);
+          }
+        }, 1000);
+      }
+    });
+
+    // Fallback timeout to handle cases where audit events might not be received
+    auditTimeoutRef.current = setTimeout(() => {
+      if (isCrawling && !isAuditing) {
+        // If we're still in crawling state but no audit events received after 30 seconds
+        // assume audits are not running and reset state
+        console.log('Audit timeout - resetting state');
+        setIsCrawling(false);
+        setIsAuditing(false);
+      }
+    }, 30000); // 30 second timeout
 
     return () => {
       eventSource.close();
+      if (auditTimeoutRef.current) {
+        clearTimeout(auditTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -95,6 +217,7 @@ function App() {
 
     try {
       setIsCrawling(true);
+      setIsAuditing(false);
       setPageCount(0);
       setLogs([]);
       setPages([]);
@@ -102,7 +225,14 @@ function App() {
       const response = await fetch('/crawl', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, allowSubdomains, maxConcurrency, mode })
+        body: JSON.stringify({ 
+          url, 
+          allowSubdomains, 
+          maxConcurrency, 
+          mode,
+          runAudits,
+          auditDevice
+        })
       });
 
       if (!response.ok) {
@@ -190,6 +320,79 @@ function App() {
               </div>
             </>
           )}
+
+          {auditStats && !isCrawling && runAudits && (
+            <>
+              <div className="audit-results-section">
+                <h3>🔍 Performance Audit Results</h3>
+                <div className="audit-stats">
+                  <div className="stat-card">
+                    <div className="stat-icon">📊</div>
+                    <div className="stat-content">
+                      <div className="stat-value">{auditStats.successful}/{auditStats.total}</div>
+                      <div className="stat-label">Audits Completed</div>
+                    </div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-icon">✅</div>
+                    <div className="stat-content">
+                      <div className="stat-value">{auditStats.successRate.toFixed(1)}%</div>
+                      <div className="stat-label">Success Rate</div>
+                    </div>
+                  </div>
+                  {auditStats.averageLcp > 0 && (
+                    <div className="stat-card">
+                      <div className="stat-icon">⚡</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{Math.round(auditStats.averageLcp)}ms</div>
+                        <div className="stat-label">Avg LCP</div>
+                      </div>
+                    </div>
+                  )}
+                  {auditStats.averageTbt > 0 && (
+                    <div className="stat-card">
+                      <div className="stat-icon">🚫</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{Math.round(auditStats.averageTbt)}ms</div>
+                        <div className="stat-label">Avg TBT</div>
+                      </div>
+                    </div>
+                  )}
+                  {auditStats.averageCls > 0 && (
+                    <div className="stat-card">
+                      <div className="stat-icon">📐</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{auditStats.averageCls.toFixed(3)}</div>
+                        <div className="stat-label">Avg CLS</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {auditResults.length > 0 && (
+                  <div className="audit-details">
+                    <h4>Detailed Results:</h4>
+                    <div className="audit-results-list">
+                      {auditResults.map((result, index) => (
+                        <div key={index} className={`audit-result-item ${result.success ? 'success' : 'failed'}`}>
+                          <div className="audit-url">{result.url}</div>
+                          {result.success ? (
+                            <div className="audit-metrics">
+                              {result.lcp && <span>LCP: {Math.round(result.lcp)}ms</span>}
+                              {result.tbt && <span>TBT: {Math.round(result.tbt)}ms</span>}
+                              {result.cls && <span>CLS: {result.cls.toFixed(3)}</span>}
+                            </div>
+                          ) : (
+                            <div className="audit-error">Error: {result.error}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
       </header>
@@ -220,6 +423,12 @@ function App() {
           >
             📈 Audits
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'audit-schedules' ? 'active' : ''}`}
+            onClick={() => setActiveTab('audit-schedules')}
+          >
+            ⏰ Audit Schedules
+          </button>
         </div>
 
         {activeTab === 'crawl' && (
@@ -232,7 +441,7 @@ function App() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   className="url-input"
-                  disabled={isCrawling}
+                  disabled={isCrawling || isAuditing}
                 />
               </div>
 
@@ -242,11 +451,42 @@ function App() {
                     type="checkbox"
                     checked={allowSubdomains}
                     onChange={(e) => setAllowSubdomains(e.target.checked)}
-                    disabled={isCrawling}
+                    disabled={isCrawling || isAuditing}
                   />
                   Subdomains
                 </label>
               </div>
+
+              <div className="control-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={runAudits}
+                    onChange={(e) => setRunAudits(e.target.checked)}
+                    disabled={isCrawling || isAuditing}
+                  />
+                  🔍 Run Performance Audits
+                </label>
+              </div>
+
+              {runAudits && (
+                <>
+                  <div className="control-group">
+                    <label>
+                      Audit Device:
+                      <select
+                        value={auditDevice}
+                        onChange={(e) => setAuditDevice(e.target.value as 'mobile' | 'desktop')}
+                        disabled={isCrawling || isAuditing}
+                      >
+                        <option value="desktop">Desktop</option>
+                        <option value="mobile">Mobile</option>
+                      </select>
+                    </label>
+                  </div>
+
+                </>
+              )}
 
               <div className="control-group">
                 <label>
@@ -258,7 +498,7 @@ function App() {
                     value={maxConcurrency}
                     onChange={(e) => setMaxConcurrency(Number(e.target.value))}
                     className="number-input"
-                    disabled={isCrawling}
+                    disabled={isCrawling || isAuditing}
                   />
                 </label>
               </div>
@@ -268,7 +508,7 @@ function App() {
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                   className="select"
-                  disabled={isCrawling}
+                  disabled={isCrawling || isAuditing}
                 >
                   <option value="html">HTML only (fast)</option>
                   <option value="auto">Auto (fallback to JS)</option>
@@ -278,10 +518,10 @@ function App() {
 
               <button
                 onClick={checkAndMaybePrompt}
-                disabled={isCrawling}
+                disabled={isCrawling || isAuditing}
                 className="start-btn"
               >
-                {isCrawling ? '⏳ Crawling...' : '🚀 Start Crawl'}
+                {isCrawling ? (isAuditing ? '🔍 Auditing...' : '⏳ Crawling...') : '🚀 Start Crawl'}
               </button>
 
               <button
@@ -298,8 +538,10 @@ function App() {
 
             <div className="status-bar">
               <div className="status-indicator">
-                <div className={`status-dot ${isCrawling ? 'crawling' : ''}`}></div>
-                <span>{isCrawling ? 'Crawling in progress...' : 'Ready to crawl'}</span>
+                <div className={`status-dot ${isCrawling ? (isAuditing ? 'auditing' : 'crawling') : ''}`}></div>
+                <span>
+                  {isCrawling ? (isAuditing ? 'Running performance audits...' : 'Crawling in progress...') : 'Ready to crawl'}
+                </span>
               </div>
               <div className="count">{pageCount} pages discovered</div>
             </div>
@@ -354,6 +596,10 @@ function App() {
 
         {activeTab === 'audits' && (
           <AuditsPage />
+        )}
+
+        {activeTab === 'audit-schedules' && (
+          <AuditScheduleManager />
         )}
       </main>
 

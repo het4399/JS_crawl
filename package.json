@@ -12,7 +12,9 @@
     "build:frontend": "vite build",
     "crawl": "tsx src/index.ts",
     "serve": "tsx src/server.ts",
-    "audits:worker": "tsx src/audits/worker.ts"
+    "audits:worker": "tsx src/audits/worker.ts",
+    "audits:scheduler": "tsx -e \"import('./src/audits/AuditScheduler.js').then(s => { const scheduler = new s.AuditScheduler(); scheduler.start(); console.log('Audit scheduler started. Press Ctrl+C to stop.'); process.on('SIGINT', () => { scheduler.stop(); process.exit(0); }); })\"",
+    "audits:cli": "tsx src/audits/cli.ts"
   },
   "keywords": [],
   "author": "",

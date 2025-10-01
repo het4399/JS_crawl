@@ -98,6 +98,35 @@ export interface ScheduleExecution {
     duration: number;
 }
 
+export interface AuditSchedule {
+    id: number;
+    name: string;
+    description: string;
+    urls: string; // JSON string of URLs array
+    device: 'mobile' | 'desktop';
+    cronExpression: string;
+    enabled: boolean;
+    createdAt: string;
+    lastRun?: string;
+    nextRun?: string;
+    totalRuns: number;
+    successfulRuns: number;
+    failedRuns: number;
+}
+
+export interface AuditExecution {
+    id: number;
+    scheduleId: number;
+    startedAt: string;
+    completedAt?: string;
+    status: 'running' | 'completed' | 'failed';
+    errorMessage?: string;
+    urlsProcessed: number;
+    urlsSuccessful: number;
+    urlsFailed: number;
+    duration: number;
+}
+
 export class DatabaseService {
     private db: Database.Database;
     private logger: Logger;
@@ -241,6 +270,42 @@ export class DatabaseService {
                 duration INTEGER DEFAULT 0,
                 FOREIGN KEY (schedule_id) REFERENCES crawl_schedules (id),
                 FOREIGN KEY (session_id) REFERENCES crawl_sessions (id)
+            )
+        `);
+
+        // Create audit schedules table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS audit_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                urls TEXT NOT NULL,
+                device TEXT NOT NULL,
+                cron_expression TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_run TEXT,
+                next_run TEXT,
+                total_runs INTEGER DEFAULT 0,
+                successful_runs INTEGER DEFAULT 0,
+                failed_runs INTEGER DEFAULT 0
+            )
+        `);
+
+        // Create audit executions table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS audit_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                schedule_id INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                error_message TEXT,
+                urls_processed INTEGER DEFAULT 0,
+                urls_successful INTEGER DEFAULT 0,
+                urls_failed INTEGER DEFAULT 0,
+                duration INTEGER DEFAULT 0,
+                FOREIGN KEY (schedule_id) REFERENCES audit_schedules (id)
             )
         `);
 
@@ -630,6 +695,8 @@ export class DatabaseService {
     // Cleanup Methods
     clearAllData(): void {
         // Delete in order to respect foreign key constraints
+        this.db.exec('DELETE FROM audit_executions');
+        this.db.exec('DELETE FROM audit_schedules');
         this.db.exec('DELETE FROM schedule_executions');
         this.db.exec('DELETE FROM sitemap_urls');
         this.db.exec('DELETE FROM sitemap_discoveries');
@@ -637,7 +704,7 @@ export class DatabaseService {
         this.db.exec('DELETE FROM pages');
         this.db.exec('DELETE FROM crawl_sessions');
         this.db.exec('DELETE FROM crawl_schedules');
-        this.logger.info('All data cleared from database');
+        this.logger.info('All data cleared from database (including audit data)');
     }
 
     deleteCrawlSession(sessionId: number): void {
@@ -1075,6 +1142,268 @@ export class DatabaseService {
             errorMessage: row.error_message,
             pagesCrawled: row.pages_crawled,
             resourcesFound: row.resources_found,
+            duration: row.duration
+        }));
+    }
+
+    // Audit Schedule Methods
+    insertAuditSchedule(data: Omit<AuditSchedule, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO audit_schedules 
+            (name, description, urls, device, cron_expression, enabled, created_at, last_run, next_run, total_runs, successful_runs, failed_runs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.name,
+            data.description,
+            data.urls,
+            data.device,
+            data.cronExpression,
+            data.enabled,
+            data.createdAt,
+            data.lastRun,
+            data.nextRun,
+            data.totalRuns,
+            data.successfulRuns,
+            data.failedRuns
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    updateAuditSchedule(id: number, updates: Partial<AuditSchedule>): void {
+        const fields: string[] = [];
+        const values: any[] = [];
+        
+        if (updates.name !== undefined) {
+            fields.push('name = ?');
+            values.push(updates.name);
+        }
+        if (updates.description !== undefined) {
+            fields.push('description = ?');
+            values.push(updates.description);
+        }
+        if (updates.urls !== undefined) {
+            fields.push('urls = ?');
+            values.push(updates.urls);
+        }
+        if (updates.device !== undefined) {
+            fields.push('device = ?');
+            values.push(updates.device);
+        }
+        if (updates.cronExpression !== undefined) {
+            fields.push('cron_expression = ?');
+            values.push(updates.cronExpression);
+        }
+        if (updates.enabled !== undefined) {
+            fields.push('enabled = ?');
+            values.push(updates.enabled);
+        }
+        if (updates.lastRun !== undefined) {
+            fields.push('last_run = ?');
+            values.push(updates.lastRun);
+        }
+        if (updates.nextRun !== undefined) {
+            fields.push('next_run = ?');
+            values.push(updates.nextRun);
+        }
+        if (updates.totalRuns !== undefined) {
+            fields.push('total_runs = ?');
+            values.push(updates.totalRuns);
+        }
+        if (updates.successfulRuns !== undefined) {
+            fields.push('successful_runs = ?');
+            values.push(updates.successfulRuns);
+        }
+        if (updates.failedRuns !== undefined) {
+            fields.push('failed_runs = ?');
+            values.push(updates.failedRuns);
+        }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE audit_schedules SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    deleteAuditSchedule(id: number): void {
+        const stmt = this.db.prepare('DELETE FROM audit_schedules WHERE id = ?');
+        stmt.run(id);
+    }
+
+    getAllAuditSchedules(): AuditSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM audit_schedules ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            urls: row.urls,
+            device: row.device,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        }));
+    }
+
+    getAuditSchedule(id: number): AuditSchedule | null {
+        const stmt = this.db.prepare('SELECT * FROM audit_schedules WHERE id = ?');
+        const row = stmt.get(id) as any;
+        
+        if (!row) return null;
+        
+        return {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            urls: row.urls,
+            device: row.device,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        };
+    }
+
+    getEnabledAuditSchedules(): AuditSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM audit_schedules WHERE enabled = 1 ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            urls: row.urls,
+            device: row.device,
+            cronExpression: row.cron_expression,
+            enabled: row.enabled,
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs
+        }));
+    }
+
+    // Audit Execution Methods
+    insertAuditExecution(data: Omit<AuditExecution, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO audit_executions 
+            (schedule_id, started_at, completed_at, status, error_message, urls_processed, urls_successful, urls_failed, duration)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.scheduleId,
+            data.startedAt,
+            data.completedAt,
+            data.status,
+            data.errorMessage,
+            data.urlsProcessed,
+            data.urlsSuccessful,
+            data.urlsFailed,
+            data.duration
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    updateAuditExecution(id: number, updates: Partial<AuditExecution>): void {
+        const fields: string[] = [];
+        const values: any[] = [];
+        
+        if (updates.completedAt !== undefined) {
+            fields.push('completed_at = ?');
+            values.push(updates.completedAt);
+        }
+        if (updates.status !== undefined) {
+            fields.push('status = ?');
+            values.push(updates.status);
+        }
+        if (updates.errorMessage !== undefined) {
+            fields.push('error_message = ?');
+            values.push(updates.errorMessage);
+        }
+        if (updates.urlsProcessed !== undefined) {
+            fields.push('urls_processed = ?');
+            values.push(updates.urlsProcessed);
+        }
+        if (updates.urlsSuccessful !== undefined) {
+            fields.push('urls_successful = ?');
+            values.push(updates.urlsSuccessful);
+        }
+        if (updates.urlsFailed !== undefined) {
+            fields.push('urls_failed = ?');
+            values.push(updates.urlsFailed);
+        }
+        if (updates.duration !== undefined) {
+            fields.push('duration = ?');
+            values.push(updates.duration);
+        }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE audit_executions SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    getAuditExecutions(scheduleId: number, limit: number = 50): AuditExecution[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM audit_executions 
+            WHERE schedule_id = ? 
+            ORDER BY started_at DESC 
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(scheduleId, limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            scheduleId: row.schedule_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            status: row.status,
+            errorMessage: row.error_message,
+            urlsProcessed: row.urls_processed,
+            urlsSuccessful: row.urls_successful,
+            urlsFailed: row.urls_failed,
+            duration: row.duration
+        }));
+    }
+
+    getAllAuditExecutions(limit: number = 100): AuditExecution[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM audit_executions 
+            ORDER BY started_at DESC 
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            scheduleId: row.schedule_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            status: row.status,
+            errorMessage: row.error_message,
+            urlsProcessed: row.urls_processed,
+            urlsSuccessful: row.urls_successful,
+            urlsFailed: row.urls_failed,
             duration: row.duration
         }));
     }

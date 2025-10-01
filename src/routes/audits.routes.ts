@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { listRecent, getById } from '../audits/reader.js';
+import auditSchedulerRoutes from './audit.routes.js';
 
 export const auditsRoutes = Router();
 
@@ -25,4 +26,6 @@ auditsRoutes.get('/audits/:id', (req, res) => {
     }
 });
 
+// Add audit scheduler routes
+auditsRoutes.use('/audit-schedules', auditSchedulerRoutes);
 

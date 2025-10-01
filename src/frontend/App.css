@@ -686,6 +686,15 @@ body {
   background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
 }
 
+.status-dot.auditing {
+  background: linear-gradient(135deg, #6f42c1 0%, #e83e8c 100%);
+  box-shadow: 0 0 10px rgba(111, 66, 193, 0.5);
+}
+
+.status-dot.auditing::before {
+  background: linear-gradient(135deg, #6f42c1 0%, #e83e8c 100%);
+}
+
 @keyframes pulse {
   0% { opacity: 1; }
   50% { opacity: 0.7; }
@@ -933,5 +942,104 @@ body {
   .logs, .pages {
     height: 250px;
     padding: 15px;
+  }
+}
+
+/* Audit Results Styles */
+.audit-results-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.audit-results-section h3 {
+  color: #333;
+  margin-bottom: 20px;
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.audit-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.audit-details h4 {
+  color: #555;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+}
+
+.audit-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.audit-result-item {
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid;
+  background: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+}
+
+.audit-result-item.success {
+  border-left-color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.audit-result-item.failed {
+  border-left-color: #F44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.audit-url {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.audit-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  font-size: 0.9rem;
+}
+
+.audit-metrics span {
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.audit-error {
+  color: #F44336;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .audit-stats {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  
+  .audit-metrics {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .audit-result-item {
+    padding: 12px;
   }
 }

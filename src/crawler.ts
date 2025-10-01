@@ -5,6 +5,7 @@ import { MetricsCollector } from './monitoring/MetricsCollector.js';
 import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 import { SitemapService } from './sitemap/SitemapService.js';
 import { initAuditEnqueue, maybeEnqueueAudit } from './audits/enqueue.js';
+import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
 
 /**
  * Check if a URL is a valid HTTP/HTTPS link that should be processed
@@ -40,17 +41,22 @@ type CrawlOptions = {
     denyParamPrefixes: string[];
     mode?: 'html' | 'js' | 'auto';
     scheduleId?: number;
+    runAudits?: boolean;
+    auditDevice?: 'mobile' | 'desktop';
 };
 
 type CrawlEvents = {
     onLog?: (message: string) => void;
     onPage?: (url: string) => void;
     onDone?: (count: number) => void;
+    onAuditStart?: (url: string) => void;
+    onAuditComplete?: (url: string, success: boolean, lcp?: number, tbt?: number, cls?: number) => void;
+    onAuditResults?: (results: any) => void;
 };
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId } = options;
-    const { onLog, onPage, onDone } = events;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId, runAudits = false, auditDevice = 'desktop' } = options;
+    const { onLog, onPage, onDone, onAuditStart, onAuditComplete, onAuditResults } = events;
     const logger = Logger.getInstance();
     const db = getDatabase();
 
@@ -766,4 +772,107 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     log.info(doneMsg);
     onLog?.(doneMsg);
     onDone?.(totalItems);
+
+    // Clean up the request queue after crawl completion
+    try {
+        await queue.drop();
+        log.info('Request queue cleaned up after crawl completion');
+    } catch (error) {
+        log.warning('Failed to clean up request queue', error as Error);
+    }
+
+    // Run audits if enabled
+    if (runAudits) {
+        try {
+            const auditIntegration = new CrawlAuditIntegration();
+
+            // Get crawled URLs for auditing
+            const crawledPages = db.getPages(sessionId);
+            const urlsToAudit = crawledPages
+                .filter(page => page.success && page.statusCode === 200)
+                .map(page => page.url);
+
+            const auditMsg = `🔍 Starting performance audits for all ${urlsToAudit.length} crawled URLs (${auditDevice})...`;
+            log.info(auditMsg);
+            onLog?.(auditMsg);
+
+            if (urlsToAudit.length === 0) {
+                const noAuditMsg = 'No valid URLs found for auditing';
+                log.info(noAuditMsg);
+                onLog?.(noAuditMsg);
+            } else {
+                onLog?.(`Running audits for ${urlsToAudit.length} URLs...`);
+                
+                // Process audits in parallel batches to speed up execution
+                const batchSize = 3; // Process 3 audits simultaneously
+                const batches = [];
+                
+                for (let i = 0; i < urlsToAudit.length; i += batchSize) {
+                    const batch = urlsToAudit.slice(i, i + batchSize);
+                    batches.push(batch);
+                }
+
+                for (const batch of batches) {
+                    // Process batch in parallel
+                    const batchPromises = batch.map(async (url) => {
+                        try {
+                            onAuditStart?.(url);
+                            const auditResult = await auditIntegration.runAuditForUrl(url, auditDevice);
+                            
+                            onAuditComplete?.(
+                                url, 
+                                auditResult.success, 
+                                auditResult.lcp, 
+                                auditResult.tbt, 
+                                auditResult.cls
+                            );
+                            
+                            if (auditResult.success) {
+                                onLog?.(`✓ Audit completed for ${url} - LCP: ${auditResult.lcp ? Math.round(auditResult.lcp) + 'ms' : 'N/A'}, TBT: ${auditResult.tbt ? Math.round(auditResult.tbt) + 'ms' : 'N/A'}, CLS: ${auditResult.cls ? auditResult.cls.toFixed(3) : 'N/A'}`);
+                            } else {
+                                onLog?.(`✗ Audit failed for ${url}: ${auditResult.error}`);
+                            }
+                            
+                            return { url, success: auditResult.success };
+                        } catch (error) {
+                            onLog?.(`✗ Audit error for ${url}: ${(error as Error).message}`);
+                            onAuditComplete?.(url, false);
+                            return { url, success: false };
+                        }
+                    });
+
+                    // Wait for batch to complete
+                    await Promise.all(batchPromises);
+                    
+                    // Small delay between batches to avoid overwhelming the API
+                    if (batches.indexOf(batch) < batches.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+
+                // Get and report final audit results
+                const auditStats = auditIntegration.getAuditStats();
+                const auditResultsMsg = `📊 Audit Results: ${auditStats.successful}/${auditStats.total} successful (${auditStats.successRate.toFixed(1)}% success rate)`;
+                log.info(auditResultsMsg);
+                onLog?.(auditResultsMsg);
+                
+                if (auditStats.averageLcp > 0) {
+                    onLog?.(`📈 Average LCP: ${Math.round(auditStats.averageLcp)}ms`);
+                }
+                if (auditStats.averageTbt > 0) {
+                    onLog?.(`📈 Average TBT: ${Math.round(auditStats.averageTbt)}ms`);
+                }
+                if (auditStats.averageCls > 0) {
+                    onLog?.(`📈 Average CLS: ${auditStats.averageCls.toFixed(3)}`);
+                }
+
+                // Send detailed results to callback
+                onAuditResults?.(auditIntegration.getAllAuditResults());
+            }
+        } catch (error) {
+            const auditErrorMsg = `❌ Audit execution failed: ${(error as Error).message}`;
+            log.error(auditErrorMsg);
+            onLog?.(auditErrorMsg);
+        }
+    }
 }

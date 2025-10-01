@@ -9,6 +9,7 @@ import { auditsRoutes } from './routes/audits.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
+import { AuditIntegration } from './audits/AuditIntegration.js';
 
 type Client = {
     id: number;
@@ -194,7 +195,7 @@ app.get('/events', (req, res) => {
 });
 
 app.post('/crawl', async (req, res) => {
-    const { url, allowSubdomains, maxConcurrency, mode } = req.body ?? {};
+    const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
     // Normalize and validate URL input
@@ -252,6 +253,8 @@ app.post('/crawl', async (req, res) => {
                     .map((s) => s.trim().toLowerCase())
                     .filter(Boolean),
                 mode: mode === 'js' || mode === 'auto' ? mode : 'html',
+                runAudits: Boolean(runAudits),
+                auditDevice: auditDevice === 'mobile' ? 'mobile' : 'desktop',
             }, {
                 onLog: (msg) => {
                     sendEvent({ type: 'log', message: msg }, 'log');
@@ -286,6 +289,25 @@ app.post('/crawl', async (req, res) => {
                     // Update health checker
                     healthChecker.setActiveCrawls(0);
                 },
+                onAuditStart: (url) => {
+                    sendEvent({ type: 'audit-start', url }, 'audit');
+                    logger.info(`Starting audit for ${url}`, {}, requestId);
+                },
+                onAuditComplete: (url, success, lcp, tbt, cls) => {
+                    sendEvent({ 
+                        type: 'audit-complete', 
+                        url, 
+                        success, 
+                        lcp, 
+                        tbt, 
+                        cls 
+                    }, 'audit');
+                    logger.info(`Audit completed for ${url}`, { success, lcp, tbt, cls }, requestId);
+                },
+                onAuditResults: (results) => {
+                    sendEvent({ type: 'audit-results', results }, 'audit');
+                    logger.info('Audit results received', { resultCount: results.length }, requestId);
+                },
             }, metricsCollector);
         } catch (e) {
             const error = e as Error;
@@ -317,6 +339,11 @@ const server = app.listen(port, () => {
     // Start scheduler service
     schedulerService.start();
     console.log('Scheduler service started');
+    
+    // Start audit integration
+    const auditIntegration = new AuditIntegration();
+    auditIntegration.start();
+    console.log('Audit integration started');
 });
 
 // Graceful shutdown
