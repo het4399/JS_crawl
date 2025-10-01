@@ -1,0 +1,32 @@
+{
+  "provider": "psi",
+  "deviceStrategy": {
+    "mobile": false,
+    "desktopSamplePercent": 0
+  },
+  "concurrency": 12,
+  "timeouts": {
+    "requestMs": 60000
+  },
+  "retries": {
+    "maxAttempts": 2,
+    "baseDelayMs": 500,
+    "maxDelayMs": 4000
+  },
+  "freshnessTtlHours": 24,
+  "urlEligibility": {
+    "sameOriginOnly": true,
+    "httpsOnly": true,
+    "statusAllow": [200],
+    "contentTypeAllow": ["text/html"],
+    "respectRobotsTxt": true,
+    "respectNoindex": true,
+    "paramWhitelist": ["lang", "page"],
+    "stripFragment": true
+  },
+  "output": {
+    "storeParsedJson": true,
+    "storeRawPayloadDays": 7
+  }
+}
+
