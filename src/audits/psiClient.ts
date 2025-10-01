@@ -8,6 +8,7 @@ export type PsiLabMetrics = {
     CLS?: number;
     FCP_ms?: number;
     TTFB_ms?: number;
+    performanceScore?: number;
 };
 
 export type PsiFieldMetrics = {
@@ -88,6 +89,7 @@ export async function fetchPsi(
                               CLS: audits['cumulative-layout-shift']?.numericValue,
                               FCP_ms: audits['first-contentful-paint']?.numericValue,
                               TTFB_ms: audits['server-response-time']?.numericValue ?? audits['time-to-first-byte']?.numericValue,
+                              performanceScore: json.lighthouseResult?.categories?.performance?.score ? Math.round(json.lighthouseResult.categories.performance.score * 100) : undefined,
                           }
                         : undefined,
                     psiReportUrl: json.lighthouseResult?.finalDisplayedUrl,

@@ -49,6 +49,7 @@ function App() {
     averageLcp: number;
     averageTbt: number;
     averageCls: number;
+    averagePerformanceScore: number;
   } | null>(null);
 
   // Timeout reference for audit fallback
@@ -139,6 +140,10 @@ function App() {
       const averageCls = successful.length > 0 && successful.some((r: any) => r.cls)
         ? successful.reduce((sum: number, r: any) => sum + (r.cls || 0), 0) / successful.filter((r: any) => r.cls).length
         : 0;
+        
+      const averagePerformanceScore = successful.length > 0 && successful.some((r: any) => r.performanceScore)
+        ? Math.round(successful.reduce((sum: number, r: any) => sum + (r.performanceScore || 0), 0) / successful.filter((r: any) => r.performanceScore).length)
+        : 0;
 
       setAuditStats({
         total: results.length,
@@ -147,7 +152,8 @@ function App() {
         successRate,
         averageLcp,
         averageTbt,
-        averageCls
+        averageCls,
+        averagePerformanceScore
       });
       
       // Audits are complete, so both crawling and auditing are done
@@ -409,6 +415,15 @@ function App() {
                       </div>
                     </div>
                   )}
+                  {auditStats.averagePerformanceScore > 0 && (
+                    <div className="stat-card performance-score-card">
+                      <div className="stat-icon">🏆</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{auditStats.averagePerformanceScore}/100</div>
+                        <div className="stat-label">Avg Performance Score</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 {auditResults.length > 0 && (
@@ -420,6 +435,7 @@ function App() {
                           <div className="audit-url">{result.url}</div>
                           {result.success ? (
                             <div className="audit-metrics">
+                              {result.performanceScore && <span className="performance-score">Score: {result.performanceScore}/100</span>}
                               {result.lcp && <span>LCP: {Math.round(result.lcp)}ms</span>}
                               {result.tbt && <span>TBT: {Math.round(result.tbt)}ms</span>}
                               {result.cls && <span>CLS: {result.cls.toFixed(3)}</span>}

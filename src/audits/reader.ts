@@ -11,6 +11,7 @@ export type AuditSummary = {
     CLS?: number;
     FCP_ms?: number;
     TTFB_ms?: number;
+    performanceScore?: number;
     psiReportUrl?: string;
 };
 
@@ -42,6 +43,7 @@ export function listRecent(device: 'mobile' | 'desktop' | 'all' = 'all', limit =
                         CLS: json.metrics?.lab?.CLS ?? json.metrics?.field?.CLS,
                         FCP_ms: json.metrics?.lab?.FCP_ms,
                         TTFB_ms: json.metrics?.lab?.TTFB_ms,
+                        performanceScore: json.metrics?.lab?.performanceScore,
                         psiReportUrl: json.metrics?.psiReportUrl,
                     });
                 } catch {

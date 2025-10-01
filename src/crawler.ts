@@ -50,7 +50,7 @@ type CrawlEvents = {
     onPage?: (url: string) => void;
     onDone?: (count: number) => void;
     onAuditStart?: (url: string) => void;
-    onAuditComplete?: (url: string, success: boolean, lcp?: number, tbt?: number, cls?: number) => void;
+    onAuditComplete?: (url: string, success: boolean, lcp?: number, tbt?: number, cls?: number, performanceScore?: number) => void;
     onAuditResults?: (results: any) => void;
 };
 
@@ -859,7 +859,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                                 auditResult.success, 
                                 auditResult.lcp, 
                                 auditResult.tbt, 
-                                auditResult.cls
+                                auditResult.cls,
+                                auditResult.performanceScore
                             );
                             
                             if (auditResult.success) {

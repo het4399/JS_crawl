@@ -1041,6 +1041,43 @@ body {
   font-weight: 500;
 }
 
+.audit-metrics .performance-score {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+}
+
+.performance-score-card {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.performance-score-card .stat-icon {
+  color: white;
+}
+
+.performance-score-card .stat-value {
+  color: white;
+  font-weight: 700;
+}
+
+.performance-score-card .stat-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.performance-score-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+}
+
 .audit-error {
   color: #F44336;
   font-size: 0.9rem;

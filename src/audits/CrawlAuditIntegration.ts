@@ -11,6 +11,7 @@ export interface CrawlAuditResult {
     cls?: number;
     fcp?: number;
     ttfb?: number;
+    performanceScore?: number;
     error?: string;
     duration: number;
 }
@@ -47,6 +48,7 @@ export class CrawlAuditIntegration {
                 cls: result.lab?.CLS,
                 fcp: result.lab?.FCP_ms,
                 ttfb: result.lab?.TTFB_ms,
+                performanceScore: result.lab?.performanceScore,
                 duration: Date.now() - startTime
             };
 

@@ -10,12 +10,18 @@ type AuditItem = {
   CLS?: number;
   FCP_ms?: number;
   TTFB_ms?: number;
+  performanceScore?: number;
   psiReportUrl?: string;
 };
 
 function formatMs(value?: number): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return `${Math.round(value)} ms`;
+}
+
+function formatScore(value?: number): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${Math.round(value)}/100`;
 }
 
 function statusFromVitals(lcp?: number, tbt?: number, cls?: number): 'Good' | 'NI' | 'Poor' | '-' {
@@ -85,6 +91,7 @@ export default function AuditsPage() {
               <th>Run Time</th>
               <th>Device</th>
               <th>URL</th>
+              <th>Score</th>
               <th>LCP</th>
               <th>TBT</th>
               <th>CLS</th>
@@ -96,7 +103,7 @@ export default function AuditsPage() {
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={10} style={{ textAlign: 'center', padding: 16 }}>{loading ? 'Loading…' : 'No audits yet'}</td></tr>
+              <tr><td colSpan={11} style={{ textAlign: 'center', padding: 16 }}>{loading ? 'Loading…' : 'No audits yet'}</td></tr>
             ) : items.map((it) => {
               const status = statusFromVitals(it.LCP_ms, it.TBT_ms, it.CLS);
               return (
@@ -105,6 +112,11 @@ export default function AuditsPage() {
                   <td>{it.device}</td>
                   <td style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <a href={it.url} target="_blank" rel="noreferrer noopener">{it.url}</a>
+                  </td>
+                  <td>
+                    {it.performanceScore ? (
+                      <span className="performance-score-badge">{formatScore(it.performanceScore)}</span>
+                    ) : '-'}
                   </td>
                   <td>{formatMs(it.LCP_ms)}</td>
                   <td>{formatMs(it.TBT_ms)}</td>

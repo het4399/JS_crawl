@@ -345,16 +345,17 @@ app.post('/crawl', async (req, res) => {
                     sendEvent({ type: 'audit-start', url }, 'audit');
                     logger.info(`Starting audit for ${url}`, {}, requestId);
                 },
-                onAuditComplete: (url, success, lcp, tbt, cls) => {
+                onAuditComplete: (url, success, lcp, tbt, cls, performanceScore) => {
                     sendEvent({ 
                         type: 'audit-complete', 
                         url, 
                         success, 
                         lcp, 
                         tbt, 
-                        cls 
+                        cls,
+                        performanceScore
                     }, 'audit');
-                    logger.info(`Audit completed for ${url}`, { success, lcp, tbt, cls }, requestId);
+                    logger.info(`Audit completed for ${url}`, { success, lcp, tbt, cls, performanceScore }, requestId);
                 },
                 onAuditResults: (results) => {
                     sendEvent({ type: 'audit-results', results }, 'audit');
