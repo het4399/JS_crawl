@@ -1500,10 +1500,11 @@ export class DatabaseService {
         isInternal: boolean;
         rel: string;
         nofollow: boolean;
+        xpath: string;
     }> {
         const whereClause = type === 'out' ? 'source_page_id = ?' : 'target_page_id = ? AND target_page_id IS NOT NULL';
         const stmt = this.db.prepare(`
-            SELECT id, source_url, target_url, anchor_text, position, is_internal, rel, nofollow
+            SELECT id, source_url, target_url, anchor_text, position, is_internal, rel, nofollow, xpath
             FROM links 
             WHERE ${whereClause}
             ORDER BY created_at DESC
@@ -1520,7 +1521,8 @@ export class DatabaseService {
             position: row.position || '',
             isInternal: Boolean(row.is_internal),
             rel: row.rel || '',
-            nofollow: Boolean(row.nofollow)
+            nofollow: Boolean(row.nofollow),
+            xpath: row.xpath || ''
         }));
     }
 

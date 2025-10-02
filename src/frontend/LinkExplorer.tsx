@@ -10,6 +10,7 @@ interface LinkData {
   isInternal: boolean;
   rel: string;
   nofollow: boolean;
+  xpath?: string;
 }
 
 interface LinkStats {
@@ -334,6 +335,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
                       <th>Type</th>
                       <th>Rel</th>
                       <th>Nofollow</th>
+                      <th>XPath</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -358,6 +360,13 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
                           <td className="rel">{link.rel || '-'}</td>
                           <td className="nofollow">
                             {link.nofollow ? '✓' : '✗'}
+                          </td>
+                          <td className="xpath" title={link.xpath}>
+                            {link.xpath ? (
+                              <code style={{ fontSize: '0.8rem', background: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>
+                                {link.xpath.length > 50 ? `${link.xpath.substring(0, 50)}...` : link.xpath}
+                              </code>
+                            ) : '-'}
                           </td>
                         </tr>
                       );

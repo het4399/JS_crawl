@@ -313,6 +313,21 @@
   color: #666;
 }
 
+.xpath {
+  max-width: 200px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.xpath code {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
 .no-links {
   text-align: center;
   padding: 40px;
