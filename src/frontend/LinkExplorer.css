@@ -13,7 +13,7 @@
 
 .link-explorer-header {
   background: white;
-  padding: 20px;
+  padding: 12px 20px;
   border-bottom: 1px solid #e1e5e9;
   display: flex;
   justify-content: space-between;
@@ -50,32 +50,32 @@
 
 .link-stats {
   background: white;
-  padding: 20px;
+  padding: 12px 20px;
   display: flex;
-  gap: 15px;
+  gap: 12px;
   flex-wrap: nowrap;
   border-bottom: 1px solid #e1e5e9;
   overflow-x: auto;
-  min-height: 80px;
+  min-height: 60px;
   align-items: center;
 }
 
 .stat-card {
   background: #f8f9fa;
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
   text-align: center;
-  min-width: 90px;
+  min-width: 80px;
   flex-shrink: 0;
   border: 1px solid #e1e5e9;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .stat-value {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: bold;
   color: #667eea;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
 }
 
 .stat-label {
@@ -166,10 +166,10 @@
 }
 
 .links-controls {
-  padding: 20px;
+  padding: 12px 20px;
   border-bottom: 1px solid #e1e5e9;
   display: flex;
-  gap: 15px;
+  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
   background: #f8f9fa;
@@ -314,18 +314,24 @@
 }
 
 .xpath {
-  max-width: 200px;
+  max-width: 400px;
+  min-width: 300px;
   font-family: 'Courier New', monospace;
   font-size: 0.8rem;
-  word-break: break-all;
-}
-
-.xpath code {
-  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  vertical-align: top;
+}
+
+.sortable {
+  background: #f8f9fa;
+  font-weight: 600;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.sortable:hover {
+  background: #e9ecef;
 }
 
 .no-links {
@@ -381,10 +387,50 @@
   }
 }
 
+/* AG-Grid Custom Styles */
+.ag-theme-alpine {
+  --ag-header-background-color: #f8f9fa;
+  --ag-header-foreground-color: #333;
+  --ag-border-color: #e1e5e9;
+  --ag-row-hover-color: #f0f4ff;
+  --ag-selected-row-background-color: #e8f5e8;
+  --ag-font-size: 14px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.ag-theme-alpine .ag-header-cell {
+  font-weight: 600;
+  border-bottom: 2px solid #667eea;
+}
+
+.ag-theme-alpine .ag-row {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ag-theme-alpine .ag-row:hover {
+  background-color: #f8f9fa;
+}
+
+.ag-theme-alpine .ag-cell {
+  padding: 8px 12px;
+  line-height: 1.4;
+}
+
+.ag-theme-alpine .ag-floating-filter-body {
+  margin: 4px;
+}
+
+.ag-theme-alpine .ag-floating-filter-input {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 /* Session Selection Styles */
 .session-selection {
   background: white;
-  padding: 20px;
+  padding: 12px 20px;
   border-bottom: 1px solid #e1e5e9;
   display: flex;
   align-items: center;

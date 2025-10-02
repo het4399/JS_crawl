@@ -1,4 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { AgGridReact } from 'ag-grid-react';
+import { ColDef, GridReadyEvent, GridApi, ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
 import './LinkExplorer.css';
 
 interface LinkData {
@@ -48,6 +54,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
   const [positionFilter, setPositionFilter] = useState<string>('all');
   const [internalFilter, setInternalFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [gridApi, setGridApi] = useState<GridApi | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -136,23 +143,120 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
     }
   };
 
-  const filteredLinks = links.filter(link => {
-    if (positionFilter !== 'all' && link.position !== positionFilter) return false;
-    if (internalFilter !== 'all') {
-      const isInternal = link.isInternal;
-      if (internalFilter === 'internal' && !isInternal) return false;
-      if (internalFilter === 'external' && isInternal) return false;
+  const onGridReady = useCallback((params: GridReadyEvent) => {
+    setGridApi(params.api);
+  }, []);
+
+  const columnDefs: ColDef[] = useMemo(() => [
+    {
+      field: 'anchorText',
+      headerName: 'Anchor Text',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => params.value || '(empty)',
+      width: 150
+    },
+    {
+      field: linkType === 'in' ? 'sourceUrl' : 'targetUrl',
+      headerName: linkType === 'in' ? 'Source URL' : 'Target URL',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => {
+        const url = params.value;
+        return url ? (
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#667eea', textDecoration: 'none' }}>
+            {url}
+          </a>
+        ) : '-';
+      },
+      width: 300
+    },
+    {
+      field: 'position',
+      headerName: 'Position',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      width: 120
+    },
+    {
+      field: 'isInternal',
+      headerName: 'Type',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => (
+        <span className={`type-badge ${params.value ? 'internal' : 'external'}`}>
+          {params.value ? 'Internal' : 'External'}
+        </span>
+      ),
+      width: 100
+    },
+    {
+      field: 'rel',
+      headerName: 'Rel',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => params.value || '-',
+      width: 80
+    },
+    {
+      field: 'nofollow',
+      headerName: 'Nofollow',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => params.value ? '✓' : '✗',
+      width: 80
+    },
+    {
+      field: 'xpath',
+      headerName: 'XPath',
+      sortable: true,
+      filter: true,
+      resizable: true,
+      cellRenderer: (params: any) => (
+        <span style={{ 
+          fontFamily: 'monospace', 
+          fontSize: '0.8rem',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          display: 'block',
+          lineHeight: '1.2'
+        }}>
+          {params.value || '-'}
+        </span>
+      ),
+      width: 500,
+      minWidth: 300,
+      wrapText: true,
+      autoHeight: true
     }
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        link.anchorText.toLowerCase().includes(searchLower) ||
-        link.targetUrl.toLowerCase().includes(searchLower) ||
-        link.sourceUrl.toLowerCase().includes(searchLower)
-      );
-    }
-    return true;
-  });
+  ], [linkType]);
+
+  const filteredLinks = useMemo(() => {
+    return links.filter(link => {
+      if (positionFilter !== 'all' && link.position !== positionFilter) return false;
+      if (internalFilter !== 'all') {
+        const isInternal = link.isInternal;
+        if (internalFilter === 'internal' && !isInternal) return false;
+        if (internalFilter === 'external' && isInternal) return false;
+      }
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          link.anchorText.toLowerCase().includes(searchLower) ||
+          link.targetUrl.toLowerCase().includes(searchLower) ||
+          link.sourceUrl.toLowerCase().includes(searchLower) ||
+          (link.xpath && link.xpath.toLowerCase().includes(searchLower))
+        );
+      }
+      return true;
+    });
+  }, [links, positionFilter, internalFilter, searchTerm]);
 
   const exportLinks = async () => {
     if (!selectedSessionId) return;
@@ -325,58 +429,31 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
                 </button>
               </div>
 
-              <div className="links-table-container">
-                <table className="links-table">
-                  <thead>
-                    <tr>
-                      <th>Anchor Text</th>
-                      <th>{linkType === 'in' ? 'Source URL' : 'Target URL'}</th>
-                      <th>Position</th>
-                      <th>Type</th>
-                      <th>Rel</th>
-                      <th>Nofollow</th>
-                      <th>XPath</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLinks.map(link => {
-                      const urlToShow = linkType === 'in' ? link.sourceUrl : link.targetUrl;
-                      return (
-                        <tr key={link.id}>
-                          <td className="anchor-text" title={link.anchorText}>
-                            {link.anchorText || '(empty)'}
-                          </td>
-                          <td className="target-url" title={urlToShow}>
-                            <a href={urlToShow} target="_blank" rel="noopener noreferrer">
-                              {urlToShow}
-                            </a>
-                          </td>
-                          <td className="position">{link.position}</td>
-                          <td className="type">
-                            <span className={`type-badge ${link.isInternal ? 'internal' : 'external'}`}>
-                              {link.isInternal ? 'Internal' : 'External'}
-                            </span>
-                          </td>
-                          <td className="rel">{link.rel || '-'}</td>
-                          <td className="nofollow">
-                            {link.nofollow ? '✓' : '✗'}
-                          </td>
-                          <td className="xpath" title={link.xpath}>
-                            {link.xpath ? (
-                              <code style={{ fontSize: '0.8rem', background: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>
-                                {link.xpath.length > 50 ? `${link.xpath.substring(0, 50)}...` : link.xpath}
-                              </code>
-                            ) : '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                
-                {filteredLinks.length === 0 && (
-                  <div className="no-links">No links found matching the current filters.</div>
-                )}
+              <div className="links-table-container" style={{ height: '600px', width: '100%' }}>
+                <div className="ag-theme-alpine" style={{ height: '100%', width: '100%' }}>
+                  <AgGridReact
+                    rowData={filteredLinks}
+                    columnDefs={columnDefs}
+                    onGridReady={onGridReady}
+    defaultColDef={{
+      resizable: true,
+      sortable: true,
+      filter: true,
+      floatingFilter: true,
+      cellStyle: { display: 'flex', alignItems: 'center' }
+    }}
+                    pagination={true}
+                    paginationPageSize={50}
+                    suppressRowClickSelection={true}
+                    rowSelection="multiple"
+                    animateRows={true}
+                    enableCellTextSelection={true}
+                    ensureDomOrder={true}
+                    suppressCopyRowsToClipboard={false}
+                    copyHeadersToClipboard={true}
+                    suppressExcelExport={false}
+                  />
+                </div>
               </div>
             </div>
           )}
