@@ -6,6 +6,7 @@ import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 import { SitemapService } from './sitemap/SitemapService.js';
 import { initAuditEnqueue, maybeEnqueueAudit } from './audits/enqueue.js';
 import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
+import { extractLinkMetadata } from './utils/linkAnalyzer.js';
 
 /**
  * Check if a URL is a valid HTTP/HTTPS link that should be processed
@@ -43,6 +44,7 @@ type CrawlOptions = {
     scheduleId?: number;
     runAudits?: boolean;
     auditDevice?: 'mobile' | 'desktop';
+    captureLinkDetails?: boolean;
 };
 
 type CrawlEvents = {
@@ -66,7 +68,7 @@ export function resetAuditCancellation(): void {
 }
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId, runAudits = false, auditDevice = 'desktop' } = options;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId, runAudits = false, auditDevice = 'desktop', captureLinkDetails = false } = options;
     const { onLog, onPage, onDone, onAuditStart, onAuditComplete, onAuditResults } = events;
     const logger = Logger.getInstance();
     const db = getDatabase();
@@ -418,6 +420,84 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     });
                 }
             });
+
+            // Link analysis (if enabled)
+            if (captureLinkDetails) {
+                const linkAnalysisStart = Date.now();
+                const linksToInsert: Array<{
+                    sessionId: number;
+                    sourcePageId: number;
+                    sourceUrl: string;
+                    targetUrl: string;
+                    targetPageId?: number;
+                    isInternal: boolean;
+                    anchorText?: string;
+                    xpath?: string;
+                    position?: string;
+                    rel?: string;
+                    nofollow?: boolean;
+                }> = [];
+                
+                const processedLinks = new Set<string>(); // For deduplication
+                
+                $('a[href]').each((_i, el) => {
+                    try {
+                        const href = $(el).attr('href');
+                        if (!href) return;
+                        
+                        let absolute: string;
+                        try { 
+                            absolute = new URL(href, url).toString(); 
+                        } catch { 
+                            return; 
+                        }
+                        
+                        // Only process HTTP/HTTPS links
+                        if (!isValidHttpLink(absolute)) return;
+                        
+                        // Deduplicate by target URL and XPath
+                        const metadata = extractLinkMetadata(el, url, $);
+                        const dedupeKey = `${metadata.targetUrl}|${metadata.xpath}`;
+                        if (processedLinks.has(dedupeKey)) return;
+                        processedLinks.add(dedupeKey);
+                        
+                        const isInternal = isSameSite(absolute, allowedHost, allowSubdomains);
+                        
+                        linksToInsert.push({
+                            sessionId,
+                            sourcePageId: pageId,
+                            sourceUrl: url,
+                            targetUrl: metadata.targetUrl,
+                            isInternal,
+                            anchorText: metadata.anchorText,
+                            xpath: metadata.xpath,
+                            position: metadata.position,
+                            rel: metadata.rel,
+                            nofollow: metadata.nofollow
+                        });
+                    } catch (error) {
+                        // Skip problematic links
+                        reqLog.debug(`Skipping link analysis for ${$(el).attr('href')}: ${(error as Error).message}`);
+                    }
+                });
+                
+                // Batch insert links
+                if (linksToInsert.length > 0) {
+                    db.insertLinks(linksToInsert);
+                }
+                
+                // Record metrics
+                const linkAnalysisTime = Date.now() - linkAnalysisStart;
+                if (metricsCollector) {
+                    metricsCollector.recordLinkAnalysis(
+                        processedLinks.size,
+                        linksToInsert.length,
+                        linkAnalysisTime
+                    );
+                }
+                
+                reqLog.debug(`Link analysis: found ${processedLinks.size} links, inserted ${linksToInsert.length} in ${linkAnalysisTime}ms`);
+            }
         },
         errorHandler: async ({ request, error }) => {
             const warn = `Request failed ${request.url}: ${(error as Error).message}`;
@@ -783,6 +863,34 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     log.info(doneMsg);
     onLog?.(doneMsg);
     onDone?.(totalItems);
+
+    // Post-processing: Resolve target_page_id relationships for link analysis
+    if (captureLinkDetails) {
+        const postProcessStart = Date.now();
+        onLog?.('🔗 Resolving link relationships...');
+        
+        try {
+            const resolvedCount = db.resolveTargetPageIds(sessionId);
+            const postProcessTime = Date.now() - postProcessStart;
+            
+            onLog?.(`✓ Resolved ${resolvedCount} internal link relationships in ${postProcessTime}ms`);
+            
+            // Get link statistics
+            const linkStats = db.getLinkStats(sessionId);
+            onLog?.(`📊 Link Analysis: ${linkStats.totalLinks} total links (${linkStats.internalLinks} internal, ${linkStats.externalLinks} external)`);
+            
+            if (Object.keys(linkStats.linksByPosition).length > 0) {
+                const positionStats = Object.entries(linkStats.linksByPosition)
+                    .map(([pos, count]) => `${pos}: ${count}`)
+                    .join(', ');
+                onLog?.(`📍 Links by position: ${positionStats}`);
+            }
+            
+        } catch (error) {
+            onLog?.(`⚠️ Link post-processing failed: ${(error as Error).message}`);
+            logger.error('Link post-processing failed', error as Error);
+        }
+    }
 
     // Clean up the request queue after crawl completion
     try {

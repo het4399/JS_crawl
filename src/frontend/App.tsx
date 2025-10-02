@@ -5,6 +5,7 @@ import AuditsPage from './AuditsPage';
 import ScheduleList from './ScheduleList';
 import CronHistory from './CronHistory';
 import AuditScheduleManager from './AuditScheduleManager';
+import LinkExplorer from './LinkExplorer';
 
 interface CrawlData {
   url: string;
@@ -27,12 +28,15 @@ function App() {
   const [mode, setMode] = useState('auto');
   const [runAudits, setRunAudits] = useState(false);
   const [auditDevice, setAuditDevice] = useState<'mobile' | 'desktop'>('desktop');
+  const [captureLinkDetails, setCaptureLinkDetails] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
   const [pageCount, setPageCount] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
+  const [showLinkExplorer, setShowLinkExplorer] = useState(false);
+  const [linkExplorerSessionId, setLinkExplorerSessionId] = useState<number | null>(null);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
@@ -98,6 +102,23 @@ function App() {
       });
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
       
+      // Update recentStatus to enable Link Explorer
+      // Use a dummy sessionId if none is provided
+      const sessionId = data.sessionId || data.id || Date.now();
+      setRecentStatus({
+        running: null,
+        latest: {
+          id: sessionId,
+          status: 'completed',
+          startedAt: data.startedAt || new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          totalPages: data.count || 0,
+          totalResources: data.resources || 0,
+          duration: duration
+        },
+        averageDurationSec: null
+      });
+      
       // If audits are not enabled, we're done immediately
       if (!runAudits) {
         console.log('Crawl done without audits - setting states to false');
@@ -162,6 +183,23 @@ function App() {
         averageTbt,
         averageCls,
         averagePerformanceScore
+      });
+      
+      // Update recentStatus to enable Link Explorer
+      // Use a dummy sessionId if none is provided
+      const sessionId = data.sessionId || data.id || Date.now();
+      setRecentStatus({
+        running: null,
+        latest: {
+          id: sessionId,
+          status: 'completed',
+          startedAt: data.startedAt || new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          totalPages: data.totalPages || 0,
+          totalResources: data.totalResources || 0,
+          duration: data.duration || 0
+        },
+        averageDurationSec: null
       });
       
       // Audits are complete, so both crawling and auditing are done
@@ -287,7 +325,8 @@ function App() {
           maxConcurrency, 
           mode,
           runAudits,
-          auditDevice
+          auditDevice,
+          captureLinkDetails
         })
       });
 
@@ -500,6 +539,8 @@ function App() {
         {activeTab === 'crawl' && (
           <>
             <div className="controls">
+              <div className="controls-section">
+                <h3>🌐 Website to Crawl</h3>
               <div className="input-group">
                 <input
                   type="url"
@@ -509,8 +550,12 @@ function App() {
                   className="url-input"
                   disabled={isCrawling || isAuditing}
                 />
+                </div>
               </div>
 
+              <div className="controls-section">
+                <h3>⚙️ Crawl Options</h3>
+                <div className="controls-row">
               <div className="control-group">
                 <label>
                   <input
@@ -522,37 +567,6 @@ function App() {
                   Subdomains
                 </label>
               </div>
-
-              <div className="control-group">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={runAudits}
-                    onChange={(e) => setRunAudits(e.target.checked)}
-                    disabled={isCrawling || isAuditing}
-                  />
-                  🔍 Run Performance Audits
-                </label>
-              </div>
-
-              {runAudits && (
-                <>
-                  <div className="control-group">
-                    <label>
-                      Audit Device:
-                      <select
-                        value={auditDevice}
-                        onChange={(e) => setAuditDevice(e.target.value as 'mobile' | 'desktop')}
-                        disabled={isCrawling || isAuditing}
-                      >
-                        <option value="desktop">Desktop</option>
-                        <option value="mobile">Mobile</option>
-                      </select>
-                    </label>
-                  </div>
-
-                </>
-              )}
 
               <div className="control-group">
                 <label>
@@ -570,6 +584,8 @@ function App() {
               </div>
 
               <div className="control-group">
+                    <label>
+                      Mode:
                 <select
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
@@ -580,7 +596,58 @@ function App() {
                   <option value="auto">Auto (fallback to JS)</option>
                   <option value="js">JS only (Playwright)</option>
                 </select>
+                    </label>
+                  </div>
+                </div>
               </div>
+
+              <div className="controls-section">
+                <h3>📊 Analysis Options</h3>
+                <div className="controls-row">
+                  <div className="control-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={runAudits}
+                        onChange={(e) => setRunAudits(e.target.checked)}
+                        disabled={isCrawling || isAuditing}
+                      />
+                      🔍 Run Performance Audits
+                    </label>
+                  </div>
+
+                  <div className="control-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={captureLinkDetails}
+                        onChange={(e) => setCaptureLinkDetails(e.target.checked)}
+                        disabled={isCrawling || isAuditing}
+                      />
+                      🔗 Link Analysis
+                    </label>
+                  </div>
+                </div>
+
+                {runAudits && (
+                  <div className="controls-row">
+                    <div className="control-group">
+                      <label>
+                        Audit Device:
+                        <select
+                          value={auditDevice}
+                          onChange={(e) => setAuditDevice(e.target.value as 'mobile' | 'desktop')}
+                          disabled={isCrawling || isAuditing}
+                        >
+                          <option value="desktop">Desktop</option>
+                          <option value="mobile">Mobile</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
 
               <button
                 onClick={checkAndMaybePrompt}
@@ -604,6 +671,17 @@ function App() {
                 className="view-data-btn"
               >
                 📊 View Data
+              </button>
+
+              <button
+                onClick={() => {
+                  setLinkExplorerSessionId(recentStatus?.latest?.id ?? null);
+                  setShowLinkExplorer(true);
+                }}
+                className="link-explorer-btn"
+                disabled={!recentStatus?.latest}
+              >
+                🔗 Link Explorer
               </button>
 
             </div>
@@ -680,6 +758,13 @@ function App() {
 
       {showDataViewer && (
         <DataViewer onClose={() => setShowDataViewer(false)} initialSessionId={initialViewerSessionId} />
+      )}
+
+      {showLinkExplorer && linkExplorerSessionId && (
+        <LinkExplorer 
+          sessionId={linkExplorerSessionId} 
+          onClose={() => setShowLinkExplorer(false)} 
+        />
       )}
 
 

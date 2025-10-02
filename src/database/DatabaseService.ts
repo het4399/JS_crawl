@@ -205,6 +205,28 @@ export class DatabaseService {
             )
         `);
 
+        // Create links table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                source_page_id INTEGER NOT NULL,
+                source_url TEXT NOT NULL,
+                target_url TEXT NOT NULL,
+                target_page_id INTEGER,
+                is_internal INTEGER NOT NULL,
+                anchor_text TEXT,
+                xpath TEXT,
+                position TEXT,
+                rel TEXT,
+                nofollow INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id),
+                FOREIGN KEY (source_page_id) REFERENCES pages (id),
+                FOREIGN KEY (target_page_id) REFERENCES pages (id)
+            )
+        `);
+
         // Create sitemap_discoveries table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sitemap_discoveries (
@@ -325,6 +347,11 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_resources_type ON resources (resource_type);
             CREATE INDEX IF NOT EXISTS idx_resources_url ON resources (url);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_session_url ON resources (session_id, url);
+            CREATE INDEX IF NOT EXISTS idx_links_session_id ON links (session_id);
+            CREATE INDEX IF NOT EXISTS idx_links_source_page_id ON links (source_page_id);
+            CREATE INDEX IF NOT EXISTS idx_links_target_url ON links (target_url);
+            CREATE INDEX IF NOT EXISTS idx_links_target_page_id ON links (target_page_id);
+            CREATE INDEX IF NOT EXISTS idx_links_is_internal ON links (is_internal);
             CREATE INDEX IF NOT EXISTS idx_sitemap_discoveries_session_id ON sitemap_discoveries (session_id);
             CREATE INDEX IF NOT EXISTS idx_sitemap_urls_session_id ON sitemap_urls (session_id);
             CREATE INDEX IF NOT EXISTS idx_sitemap_urls_url ON sitemap_urls (url);
@@ -695,14 +722,16 @@ export class DatabaseService {
     // Cleanup Methods
     clearAllData(): void {
         // Delete in order to respect foreign key constraints
+        // First delete child tables, then parent tables
         this.db.exec('DELETE FROM audit_executions');
+        this.db.exec('DELETE FROM links'); // Links table references pages and sessions
+        this.db.exec('DELETE FROM resources'); // Resources table references pages and sessions
+        this.db.exec('DELETE FROM pages'); // Pages table references sessions
+        this.db.exec('DELETE FROM sitemap_urls'); // Sitemap URLs reference sessions
+        this.db.exec('DELETE FROM sitemap_discoveries'); // Sitemap discoveries reference sessions
+        this.db.exec('DELETE FROM schedule_executions'); // Schedule executions reference sessions
+        this.db.exec('DELETE FROM crawl_sessions'); // Sessions table (parent)
         this.db.exec('DELETE FROM audit_schedules');
-        this.db.exec('DELETE FROM schedule_executions');
-        this.db.exec('DELETE FROM sitemap_urls');
-        this.db.exec('DELETE FROM sitemap_discoveries');
-        this.db.exec('DELETE FROM resources');
-        this.db.exec('DELETE FROM pages');
-        this.db.exec('DELETE FROM crawl_sessions');
         this.db.exec('DELETE FROM crawl_schedules');
         this.logger.info('All data cleared from database (including audit data)');
     }
@@ -1417,6 +1446,237 @@ export class DatabaseService {
             urlsSuccessful: row.urls_successful,
             urlsFailed: row.urls_failed,
             duration: row.duration
+        }));
+    }
+
+    // Link analysis methods
+    insertLinks(links: Array<{
+        sessionId: number;
+        sourcePageId: number;
+        sourceUrl: string;
+        targetUrl: string;
+        targetPageId?: number;
+        isInternal: boolean;
+        anchorText?: string;
+        xpath?: string;
+        position?: string;
+        rel?: string;
+        nofollow?: boolean;
+    }>): void {
+        if (links.length === 0) return;
+
+        const stmt = this.db.prepare(`
+            INSERT INTO links 
+            (session_id, source_page_id, source_url, target_url, target_page_id, is_internal, anchor_text, xpath, position, rel, nofollow, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const timestamp = new Date().toISOString();
+        
+        for (const link of links) {
+            stmt.run(
+                link.sessionId,
+                link.sourcePageId,
+                link.sourceUrl,
+                link.targetUrl,
+                link.targetPageId || null,
+                link.isInternal ? 1 : 0,
+                link.anchorText || null,
+                link.xpath || null,
+                link.position || null,
+                link.rel || null,
+                link.nofollow ? 1 : 0,
+                timestamp
+            );
+        }
+    }
+
+    getLinksByPage(pageId: number, type: 'in' | 'out' = 'out', limit: number = 100): Array<{
+        id: number;
+        sourceUrl: string;
+        targetUrl: string;
+        anchorText: string;
+        position: string;
+        isInternal: boolean;
+        rel: string;
+        nofollow: boolean;
+    }> {
+        const whereClause = type === 'out' ? 'source_page_id = ?' : 'target_page_id = ? AND target_page_id IS NOT NULL';
+        const stmt = this.db.prepare(`
+            SELECT id, source_url, target_url, anchor_text, position, is_internal, rel, nofollow
+            FROM links 
+            WHERE ${whereClause}
+            ORDER BY created_at DESC
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(pageId, limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            sourceUrl: row.source_url,
+            targetUrl: row.target_url,
+            anchorText: row.anchor_text || '',
+            position: row.position || '',
+            isInternal: Boolean(row.is_internal),
+            rel: row.rel || '',
+            nofollow: Boolean(row.nofollow)
+        }));
+    }
+
+    getLinkStats(sessionId: number): {
+        totalLinks: number;
+        internalLinks: number;
+        externalLinks: number;
+        linksByPosition: Record<string, number>;
+    } {
+        const totalStmt = this.db.prepare(`
+            SELECT COUNT(*) as total, 
+                   SUM(CASE WHEN is_internal = 1 THEN 1 ELSE 0 END) as internal,
+                   SUM(CASE WHEN is_internal = 0 THEN 1 ELSE 0 END) as external
+            FROM links WHERE session_id = ?
+        `);
+        
+        const positionStmt = this.db.prepare(`
+            SELECT position, COUNT(*) as count
+            FROM links 
+            WHERE session_id = ? AND position IS NOT NULL
+            GROUP BY position
+        `);
+        
+        const totalResult = totalStmt.get(sessionId) as any;
+        const positionResults = positionStmt.all(sessionId) as any[];
+        
+        const linksByPosition: Record<string, number> = {};
+        for (const row of positionResults) {
+            linksByPosition[row.position] = row.count;
+        }
+        
+        return {
+            totalLinks: totalResult.total || 0,
+            internalLinks: totalResult.internal || 0,
+            externalLinks: totalResult.external || 0,
+            linksByPosition
+        };
+    }
+
+    // Resolve target_page_id for internal links
+    resolveTargetPageIds(sessionId: number): number {
+        const stmt = this.db.prepare(`
+            UPDATE links 
+            SET target_page_id = (
+                SELECT p.id 
+                FROM pages p 
+                WHERE p.session_id = ? 
+                AND p.url = links.target_url
+            )
+            WHERE session_id = ? 
+            AND is_internal = 1 
+            AND target_page_id IS NULL
+        `);
+        
+        const result = stmt.run(sessionId, sessionId);
+        return result.changes;
+    }
+
+    // Get per-page link statistics
+    getPageLinkStats(sessionId: number): Array<{
+        pageId: number;
+        url: string;
+        title: string;
+        outlinks: number;
+        inlinks: number;
+        externalOutlinks: number;
+        internalOutlinks: number;
+    }> {
+        const stmt = this.db.prepare(`
+            SELECT 
+                p.id as page_id,
+                p.url,
+                p.title,
+                COALESCE(outlink_stats.outlinks, 0) as outlinks,
+                COALESCE(inlink_stats.inlinks, 0) as inlinks,
+                COALESCE(outlink_stats.external_outlinks, 0) as external_outlinks,
+                COALESCE(outlink_stats.internal_outlinks, 0) as internal_outlinks
+            FROM pages p
+            LEFT JOIN (
+                SELECT 
+                    source_page_id,
+                    COUNT(*) as outlinks,
+                    SUM(CASE WHEN is_internal = 0 THEN 1 ELSE 0 END) as external_outlinks,
+                    SUM(CASE WHEN is_internal = 1 THEN 1 ELSE 0 END) as internal_outlinks
+                FROM links 
+                WHERE session_id = ?
+                GROUP BY source_page_id
+            ) outlink_stats ON p.id = outlink_stats.source_page_id
+            LEFT JOIN (
+                SELECT 
+                    target_page_id,
+                    COUNT(*) as inlinks
+                FROM links 
+                WHERE session_id = ? AND target_page_id IS NOT NULL
+                GROUP BY target_page_id
+            ) inlink_stats ON p.id = inlink_stats.target_page_id
+            WHERE p.session_id = ?
+            ORDER BY outlinks DESC, inlinks DESC
+        `);
+        
+        const rows = stmt.all(sessionId, sessionId, sessionId) as any[];
+        
+        return rows.map(row => ({
+            pageId: row.page_id,
+            url: row.url,
+            title: row.title,
+            outlinks: row.outlinks,
+            inlinks: row.inlinks,
+            externalOutlinks: row.external_outlinks,
+            internalOutlinks: row.internal_outlinks
+        }));
+    }
+
+    // Get link relationships (which pages link to which pages)
+    getLinkRelationships(sessionId: number, limit: number = 100): Array<{
+        sourcePageId: number;
+        sourceUrl: string;
+        sourceTitle: string;
+        targetPageId: number;
+        targetUrl: string;
+        targetTitle: string;
+        linkCount: number;
+        anchorTexts: string[];
+    }> {
+        const stmt = this.db.prepare(`
+            SELECT 
+                l.source_page_id,
+                sp.url as source_url,
+                sp.title as source_title,
+                l.target_page_id,
+                tp.url as target_url,
+                tp.title as target_title,
+                COUNT(*) as link_count,
+                GROUP_CONCAT(l.anchor_text, '|') as anchor_texts
+            FROM links l
+            JOIN pages sp ON l.source_page_id = sp.id
+            JOIN pages tp ON l.target_page_id = tp.id
+            WHERE l.session_id = ? 
+            AND l.is_internal = 1
+            AND l.target_page_id IS NOT NULL
+            GROUP BY l.source_page_id, l.target_page_id
+            ORDER BY link_count DESC
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(sessionId, limit) as any[];
+        
+        return rows.map(row => ({
+            sourcePageId: row.source_page_id,
+            sourceUrl: row.source_url,
+            sourceTitle: row.source_title,
+            targetPageId: row.target_page_id,
+            targetUrl: row.target_url,
+            targetTitle: row.target_title,
+            linkCount: row.link_count,
+            anchorTexts: row.anchor_texts ? row.anchor_texts.split('|').filter(Boolean) : []
         }));
     }
 

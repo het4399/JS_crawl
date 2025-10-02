@@ -23,6 +23,7 @@ async function main() {
     const allowSubdomains = getEnvBoolean('ALLOW_SUBDOMAINS', false);
     const maxConcurrency = getEnvNumber('CRAWL_MAX_CONCURRENCY', 150);
     const perHostDelayMs = getEnvNumber('CRAWL_PER_HOST_DELAY_MS', 150);
+    const captureLinkDetails = getEnvBoolean('CAPTURE_LINK_DETAILS', false);
     const denyParams = (process.env.DENY_PARAMS || 'utm_,session,sort,filter,ref,fbclid,gclid')
         .split(',')
         .map((s) => s.trim().toLowerCase())
@@ -34,7 +35,8 @@ async function main() {
         maxConcurrency,
         perHostDelayMs,
         denyParamPrefixes: denyParams,
-        mode: (process.env.MODE as 'html'|'js'|'auto') || 'html'
+        mode: (process.env.MODE as 'html'|'js'|'auto') || 'html',
+        captureLinkDetails
     });
 }
 

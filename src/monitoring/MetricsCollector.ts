@@ -97,6 +97,11 @@ export class MetricsCollector {
       .sort((a, b) => b.count - a.count);
   }
 
+  recordLinkAnalysis(processedLinks: number, insertedLinks: number, analysisTime: number): void {
+    // This method is called for link analysis metrics
+    // Currently just a placeholder - can be extended to track link analysis performance
+  }
+
   reset(): void {
     this.metrics = {
       totalPages: 0,

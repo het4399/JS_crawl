@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { runCrawl, cancelAudits, resetAuditCancellation } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { auditsRoutes } from './routes/audits.routes.js';
+import linksRoutes from './routes/links.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
@@ -32,6 +33,7 @@ app.use(express.static(distFrontendPath));
 // Add monitoring routes
 app.use('/api', monitoringRoutes);
 app.use('/api', auditsRoutes);
+app.use(linksRoutes);
 
 // Cancel audits endpoint - moved before static file serving
 // app.post('/cancel-audits', (req, res) => {
@@ -247,7 +249,7 @@ app.get('/events', (req, res) => {
 });
 
 app.post('/crawl', async (req, res) => {
-    const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice } = req.body ?? {};
+    const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice, captureLinkDetails } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
     // Normalize and validate URL input
@@ -307,6 +309,7 @@ app.post('/crawl', async (req, res) => {
                 mode: mode === 'js' || mode === 'auto' ? mode : 'html',
                 runAudits: Boolean(runAudits),
                 auditDevice: auditDevice === 'mobile' ? 'mobile' : 'desktop',
+                captureLinkDetails: Boolean(captureLinkDetails),
             }, {
                 onLog: (msg) => {
                     sendEvent({ type: 'log', message: msg }, 'log');
