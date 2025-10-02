@@ -36,7 +36,6 @@ function App() {
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
-  const [linkExplorerSessionId, setLinkExplorerSessionId] = useState<number | null>(null);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
@@ -675,11 +674,9 @@ function App() {
 
               <button
                 onClick={() => {
-                  setLinkExplorerSessionId(recentStatus?.latest?.id ?? null);
                   setShowLinkExplorer(true);
                 }}
                 className="link-explorer-btn"
-                disabled={!recentStatus?.latest}
               >
                 🔗 Link Explorer
               </button>
@@ -760,9 +757,8 @@ function App() {
         <DataViewer onClose={() => setShowDataViewer(false)} initialSessionId={initialViewerSessionId} />
       )}
 
-      {showLinkExplorer && linkExplorerSessionId && (
+      {showLinkExplorer && (
         <LinkExplorer 
-          sessionId={linkExplorerSessionId} 
           onClose={() => setShowLinkExplorer(false)} 
         />
       )}
