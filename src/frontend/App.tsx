@@ -6,6 +6,7 @@ import ScheduleList from './ScheduleList';
 import CronHistory from './CronHistory';
 import AuditScheduleManager from './AuditScheduleManager';
 import LinkExplorer from './LinkExplorer';
+import WebTree from './WebTree';
 
 interface CrawlData {
   url: string;
@@ -36,6 +37,7 @@ function App() {
   const [pages, setPages] = useState<string[]>([]);
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
+  const [showWebTree, setShowWebTree] = useState(false);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
@@ -681,6 +683,13 @@ function App() {
                 🔗 Link Explorer
               </button>
 
+              <button
+                onClick={() => setShowWebTree(true)}
+                className="link-explorer-btn"
+              >
+                🌳 Web Tree
+              </button>
+
             </div>
 
             {/* Resume UI removed for minimalism */}
@@ -761,6 +770,10 @@ function App() {
         <LinkExplorer 
           onClose={() => setShowLinkExplorer(false)} 
         />
+      )}
+
+      {showWebTree && (
+        <WebTree onClose={() => setShowWebTree(false)} />
       )}
 
 
