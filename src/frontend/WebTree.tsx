@@ -226,23 +226,14 @@ export default function WebTree({ onClose }: WebTreeProps) {
           if (result?.paging?.total && offset >= result.paging.total) break;
         }
 
-        // Determine start root from session: pick dominant host, then shortest path on that host
+        // Determine start root from the selected session's startUrl
         if (urls.length === 0) throw new Error('No URLs found for this session');
-        const hostCount = new Map<string, number>();
-        for (const u of urls) {
-          try { const h = new URL(u).host; hostCount.set(h, (hostCount.get(h) || 0) + 1); } catch {}
-        }
-        const chosenHost = [...hostCount.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] || new URL(urls[0]).host;
-        setPrimaryHost(chosenHost);
-        const candidates = urls.filter(u => { try { return new URL(u).host === chosenHost; } catch { return false; } });
-        const startUrl = candidates.sort((a,b) => {
-          const ap = new URL(a).pathname.split('/').filter(Boolean).length;
-          const bp = new URL(b).pathname.split('/').filter(Boolean).length;
-          return ap - bp;
-        })[0];
-        normalizedRoot = normalizeUrl(startUrl);
+        const sess = sessions.find(s => s.id === selectedSessionId);
+        const sessionStart = sess?.startUrl || urls[0];
+        normalizedRoot = normalizeUrl(sessionStart);
         root = new URL(normalizedRoot);
         setRootUrl(normalizedRoot);
+        setPrimaryHost(root.host);
 
         // Build path-based tree from the start root
         const rootNode: D3TreeNode = { name: normalizedRoot, attributes: { level: 0, full: normalizedRoot }, children: [] };
