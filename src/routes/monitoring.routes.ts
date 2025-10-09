@@ -354,6 +354,47 @@ router.get('/data/list', async (req, res) => {
   }
 });
 
+// List only pages (exclude resources) with pagination
+router.get('/data/pages', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const limit = Math.min(parseInt(req.query.limit as string) || 1000, 5000);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const sessionId = req.query.sessionId ? parseInt(req.query.sessionId as string) : undefined;
+    const hostFilter = (req.query.host as string | undefined) || undefined; // optional
+
+    let pages = db.getPages(sessionId, limit, offset) as any[];
+    if (hostFilter) {
+      pages = pages.filter((p: any) => {
+        try { return new URL(p.url).host === hostFilter || new URL(p.url).hostname.endsWith('.' + hostFilter); } catch { return false; }
+      });
+    }
+
+    const totalPages = db.getPageCount(sessionId);
+
+    res.json({
+      data: pages.map((p: any) => ({
+        id: p.id,
+        sessionId: p.sessionId ?? p.session_id ?? sessionId,
+        url: p.url,
+        title: p.title ?? null,
+        timestamp: p.timestamp ?? p.created_at ?? null,
+        statusCode: p.statusCode ?? p.status_code ?? null,
+      })),
+      paging: {
+        limit,
+        offset,
+        count: pages.length,
+        total: totalPages,
+        hasMore: offset + pages.length < totalPages,
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to list pages', error as Error);
+    res.status(500).json({ error: 'Failed to retrieve pages', details: (error as Error).message });
+  }
+});
+
 // List crawl sessions for filtering in UI
 router.get('/data/sessions', (req, res) => {
   try {

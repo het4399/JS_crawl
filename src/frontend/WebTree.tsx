@@ -210,15 +210,13 @@ export default function WebTree({ onClose }: WebTreeProps) {
           params.set('limit', String(limit));
           params.set('offset', String(offset));
           params.set('sessionId', String(selectedSessionId));
-          const res = await fetch(`/api/data/list?${params.toString()}`);
+          const res = await fetch(`/api/data/pages?${params.toString()}`);
           if (!res.ok) throw new Error('Failed to load URL list');
           const result = await res.json();
-          const items = (result.data || []) as Array<{ url: string; resourceType?: string }>;
+          const items = (result.data || []) as Array<{ url: string }>;
           if (items.length === 0) break;
           for (const it of items) {
             if (!it.url) continue;
-            // Only keep HTML pages; skip images/css/js/fonts/media/external resources
-            if (it.resourceType && it.resourceType !== 'page') continue;
             const nu = normalizeUrl(it.url);
             // Filter: only likely page URLs
             if (!isLikelyPageUrl(nu)) continue;
