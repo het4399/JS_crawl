@@ -120,6 +120,75 @@ export default function WebTree({ onClose }: WebTreeProps) {
   const [totalUrlsUsed, setTotalUrlsUsed] = useState<number>(0);
   const [breadcrumb, setBreadcrumb] = useState<string[]>([]);
   const [recenterKey, setRecenterKey] = useState<number>(0);
+  // SEO keywords toggle and data
+  const [seoEnabled, setSeoEnabled] = useState<boolean>(false);
+  const [seoLoading, setSeoLoading] = useState<boolean>(false);
+  const [seoError, setSeoError] = useState<string | null>(null);
+  const [seoResult, setSeoResult] = useState<null | {
+    parent: { text: string; score: number; intent?: string } | null;
+    keywords: Array<{ text: string; score: number; intent?: string }>;
+    language?: string;
+  }>(null);
+  // Per-URL SEO summary to attach on tree nodes
+  const [seoByUrl, setSeoByUrl] = useState<Map<string, { parentText?: string; topKeywords?: string[] }>>(new Map());
+
+  // Compute full URL from breadcrumb (first element is root URL, subsequent are path segments)
+  const computeSelectedUrl = useCallback((): string | null => {
+    if (!breadcrumb || breadcrumb.length === 0) return null;
+    const first = breadcrumb[0];
+    if (!first) return null;
+    try {
+      const base = new URL(first);
+      if (breadcrumb.length === 1) return normalizeUrl(base.toString());
+      const suffix = breadcrumb.slice(1).join('/');
+      const joined = suffix ? `${base.origin}${base.pathname.replace(/\/$/, '')}/${suffix}` : base.toString();
+      return normalizeUrl(joined);
+    } catch {
+      return null;
+    }
+  }, [breadcrumb]);
+
+  // Trigger SEO extraction when enabled and selection changes
+  useEffect(() => {
+    const run = async () => {
+      if (!seoEnabled) return;
+      const url = computeSelectedUrl();
+      if (!url) return;
+      setSeoLoading(true);
+      setSeoError(null);
+      setSeoResult(null);
+      try {
+        const res = await fetch('/api/seo/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && (data.error || data.detail || JSON.stringify(data))) || 'Extraction failed');
+        }
+        setSeoResult({
+          parent: data.parent ? { text: data.parent.text, score: data.parent.score, intent: data.parent.intent } : null,
+          keywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 30) : [],
+          language: data.language,
+        });
+        // Attach to map for selected node
+        setSeoByUrl(prev => {
+          const next = new Map(prev);
+          next.set(normalizeUrl(url), {
+            parentText: data.parent?.text,
+            topKeywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 10).map((k: any) => k.text) : [],
+          });
+          return next;
+        });
+      } catch (e) {
+        setSeoError(e instanceof Error ? e.message : 'Extraction failed');
+      } finally {
+        setSeoLoading(false);
+      }
+    };
+    void run();
+  }, [breadcrumb, seoEnabled, computeSelectedUrl]);
 
   function computeTreeStats(root: D3TreeNode | null): { maxDepth: number; levelCounts: number[] } {
     if (!root) return { maxDepth: 0, levelCounts: [] };
@@ -268,10 +337,14 @@ export default function WebTree({ onClose }: WebTreeProps) {
           usedCount++;
         }
 
+        // Attach full URL on root for downstream lookups
+        rootNode.attributes = { ...(rootNode.attributes || {}), full: normalizedRoot };
         setTreeData(rootNode);
         autoAdjustLayout(rootNode);
         setLoadedUrls(new Set([normalizedRoot]));
         setTotalUrlsUsed(usedCount);
+        // If SEO is enabled, prime selection to root URL to trigger extraction
+        try { setBreadcrumb([normalizedRoot]); } catch {}
         setLoading(false);
         return;
       }
@@ -327,10 +400,10 @@ export default function WebTree({ onClose }: WebTreeProps) {
       const updated = findAndUpdate(treeData, normalized, (node) => {
         const currentLevel = (node.attributes?.level as number) ?? 0;
         const existing = new Set((node.children || []).map(c => c.name));
-        const newChildren: D3TreeNode[] = [];
+          const newChildren: D3TreeNode[] = [];
         for (const cu of childrenUrls) {
           if (existing.has(cu)) continue;
-          newChildren.push({ name: cu, attributes: { level: currentLevel + 1 }, children: [] });
+            newChildren.push({ name: cu, attributes: { level: currentLevel + 1, full: cu }, children: [] });
         }
         node.children = [...(node.children || []), ...newChildren];
       });
@@ -341,6 +414,83 @@ export default function WebTree({ onClose }: WebTreeProps) {
       setError(e instanceof Error ? e.message : 'Failed to load children');
     }
   }, [treeData, selectedSessionId, pageIndex, loadedUrls, fetchOutlinks, rootUrl]);
+
+  // When SEO is enabled, batch-extract for root and first-level children
+  useEffect(() => {
+    const run = async () => {
+      if (!seoEnabled || !treeData) return;
+      const urls: string[] = [];
+      const rootFull = (treeData.attributes?.full as string) || treeData.name;
+      urls.push(normalizeUrl(rootFull));
+      for (const c of (treeData.children || [])) {
+        const f = (c.attributes?.full as string) || c.name;
+        urls.push(normalizeUrl(f));
+      }
+      await Promise.all(urls.map(async (u) => {
+        try {
+          await fetch('/api/seo/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }) });
+        } catch {}
+      }));
+    };
+    void run();
+  }, [seoEnabled, treeData]);
+
+  // Collect all URLs in the current tree
+  function collectAllUrls(node: D3TreeNode | null): string[] {
+    if (!node) return [];
+    const acc: string[] = [];
+    const stack: D3TreeNode[] = [node];
+    while (stack.length) {
+      const n = stack.pop()!;
+      const full = (n.attributes?.full as string) || n.name;
+      acc.push(normalizeUrl(full));
+      if (n.children) for (const c of n.children) stack.push(c);
+    }
+    return Array.from(new Set(acc));
+  }
+
+  // Limited concurrency runner for full-tree SEO extraction
+  useEffect(() => {
+    const run = async () => {
+      if (!seoEnabled || !treeData) return;
+      const urls = collectAllUrls(treeData);
+      const concurrency = 5;
+      let idx = 0;
+
+      async function worker() {
+        while (idx < urls.length) {
+          const my = idx++;
+          const u = urls[my];
+          // Skip if already attached
+          if (seoByUrl.has(u)) continue;
+          try {
+            const res = await fetch('/api/seo/extract', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: u })
+            });
+            const data = await res.json().catch(() => ({} as any));
+            if (res.ok && data) {
+              setSeoByUrl(prev => {
+                const next = new Map(prev);
+                next.set(u, {
+                  parentText: data.parent?.text,
+                  topKeywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 10).map((k: any) => k.text) : []
+                });
+                return next;
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, () => worker()));
+    };
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seoEnabled, treeData]);
 
   const handleBuild = useCallback(() => {
     buildTree();
@@ -354,10 +504,30 @@ export default function WebTree({ onClose }: WebTreeProps) {
 
   function convertToTidy(root: D3TreeNode | null): TidyTreeNode | null {
     if (!root) return null;
-    const mapNode = (n: D3TreeNode): TidyTreeNode => ({
-      text: n.name,
-      children: n.children && n.children.length ? n.children.map(mapNode) : undefined,
-    });
+    const mapNode = (n: D3TreeNode): TidyTreeNode => {
+      const full = (n.attributes?.full as string) || n.name;
+      const seo = seoByUrl.get(normalizeUrl(full));
+      const label = (n.attributes?.full as string) || n.name; // show full URL when available
+      const baseChildren: TidyTreeNode[] = n.children && n.children.length ? n.children.map(mapNode) : [];
+
+      // Build a separate main keyword node as direct child of the URL node
+      let childrenWithSeo: TidyTreeNode[] = [...baseChildren];
+      if (seo && seo.parentText) {
+        const keywordChildren: TidyTreeNode[] = (seo.topKeywords || []).slice(0, 8).map((kw) => ({
+          text: `• ${kw}`,
+        }));
+        const mainKwNode: TidyTreeNode = {
+          text: `${seo.parentText}`,
+          children: keywordChildren.length ? keywordChildren : undefined,
+        };
+        childrenWithSeo = [mainKwNode, ...childrenWithSeo];
+      }
+
+      return {
+        text: label,
+        children: childrenWithSeo.length ? childrenWithSeo : undefined,
+      };
+    };
     return mapNode(root);
   }
 
@@ -399,6 +569,14 @@ export default function WebTree({ onClose }: WebTreeProps) {
             <button className="btn" onClick={() => { setSiblingSeparation(2.0); setNonSiblingSeparation(2.2); setLabelMaxChars(80); }}>Spacious</button>
             <button className="btn" onClick={() => { autoAdjustLayout(treeData); setRecenterKey(k => k + 1); }}>Auto-fit</button>
           </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={seoEnabled} onChange={(e) => setSeoEnabled(e.target.checked)} />
+              SEO keywords
+            </label>
+            {seoEnabled && seoLoading && <span className="chip">Extracting…</span>}
+            {seoEnabled && seoError && <span className="chip warn">{seoError}</span>}
+          </div>
           <button className="btn btn-primary" onClick={handleBuild} disabled={!selectedSessionId || loading} style={{ boxShadow: '0 2px 8px rgba(29,78,216,0.25)' }}>
             {loading ? 'Building…' : 'Build Tree'}
           </button>
@@ -426,10 +604,36 @@ export default function WebTree({ onClose }: WebTreeProps) {
             <div style={{ padding: 16, color: '#555' }}>Configure options and click "Build Tree".</div>
           )}
         </div>
+        {seoEnabled && seoResult && (
+          <div style={{ borderTop: '1px solid #eee', padding: '10px 16px', background: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 600 }}>SEO Keywords</span>
+              {seoResult.language && <span className="chip">Lang: {seoResult.language}</span>}
+            </div>
+            {seoResult.parent ? (
+              <div style={{ marginBottom: 6 }}>
+                <span className="chip" style={{ background: '#ecfdf5', color: '#065f46' }}>
+                  Parent: {seoResult.parent.text} · {seoResult.parent.score}
+                </span>
+              </div>
+            ) : (
+              <div className="chip">No parent keyword</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {seoResult.keywords.slice(0, 20).map((k, i) => (
+                <span key={i} className="chip">
+                  {k.text} · {k.score}
+                </span>
+              ))}
+              {seoResult.keywords.length === 0 && <span className="chip">No keywords found</span>}
+            </div>
+          </div>
+        )}
         {/* D3 renderer handles zoom via mouse; no explicit buttons needed */}
       </div>
     </div>
   );
 }
+
 
 
