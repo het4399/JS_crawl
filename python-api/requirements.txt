@@ -1,0 +1,10 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+spacy==3.7.2
+beautifulsoup4==4.12.2
+readability-lxml==0.8.1
+langdetect==1.0.9
+pydantic==2.5.0
+python-multipart==0.0.6
+lxml[html_clean]
+
