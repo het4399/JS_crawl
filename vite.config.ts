@@ -9,6 +9,13 @@ export default defineConfig({
       ignored: ['**/storage/**', '**/dist/**', '**/node_modules/**']
     },
     proxy: {
+      '/aeo': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/aeo/, '/api'),
+        timeout: 60000,
+      },
       '/api': {
         target: 'http://localhost:3004',
         changeOrigin: true,
@@ -41,6 +48,12 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: 'dist-frontend'
+    outDir: 'dist-frontend',
+    rollupOptions: {
+      input: {
+        main: './index.html',
+        app2: './app2.html'
+      }
+    }
   }
 })
