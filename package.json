@@ -11,9 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "build:frontend": "vite build",
     "crawl": "tsx src/index.ts",
-    "serve": "tsx src/server.ts",
     "audits:worker": "tsx src/audits/worker.ts",
-    "audits:scheduler": "tsx -e \"import('./src/audits/AuditScheduler.js').then(s => { const scheduler = new s.AuditScheduler(); scheduler.start(); console.log('Audit scheduler started. Press Ctrl+C to stop.'); process.on('SIGINT', () => { scheduler.stop(); process.exit(0); }); })\"",
     "audits:cli": "tsx src/audits/cli.ts"
   },
   "keywords": [],
@@ -48,7 +46,10 @@
     "@types/express": "^4.17.21",
     "@types/node": "^24.4.0",
     "@types/nodemailer": "^7.0.1",
+    "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.14",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
