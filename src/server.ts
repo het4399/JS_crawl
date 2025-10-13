@@ -299,14 +299,14 @@ app.post('/crawl', async (req, res) => {
         try {
             await runCrawl({
                 startUrl: safeUrl,
-                allowSubdomains: Boolean(allowSubdomains),
-                maxConcurrency: Number(maxConcurrency) || 150,
+                allowSubdomains: true,
+                maxConcurrency: 150,
                 perHostDelayMs: Number(process.env.CRAWL_PER_HOST_DELAY_MS) || 150,
                 denyParamPrefixes: (process.env.DENY_PARAMS || 'utm_,session,sort,filter,ref,fbclid,gclid')
                     .split(',')
                     .map((s) => s.trim().toLowerCase())
                     .filter(Boolean),
-                mode: mode === 'js' || mode === 'auto' ? mode : 'html',
+                mode: 'html',
                 runAudits: Boolean(runAudits),
                 auditDevice: auditDevice === 'mobile' ? 'mobile' : 'desktop',
                 captureLinkDetails: Boolean(captureLinkDetails),

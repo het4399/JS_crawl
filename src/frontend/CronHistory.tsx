@@ -371,10 +371,7 @@ const CronHistory: React.FC<CronHistoryProps> = ({ onClose }) => {
                     <label>Start URL:</label>
                     <span>{selectedExecution.startUrl}</span>
                   </div>
-                  <div className="detail-item">
-                    <label>Mode:</label>
-                    <span>{selectedExecution.mode}</span>
-                  </div>
+                  
                   <div className="detail-item">
                     <label>Started:</label>
                     <span>{formatDate(selectedExecution.startedAt)}</span>

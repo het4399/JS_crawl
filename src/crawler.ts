@@ -1,4 +1,4 @@
-import { CheerioCrawler, log, RequestQueue, PlaywrightCrawler } from 'crawlee';
+import { CheerioCrawler, log, RequestQueue } from 'crawlee';
 import { canonicalizeUrl, isSameSite } from './utils/url.js';
 import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
@@ -40,7 +40,7 @@ type CrawlOptions = {
     maxConcurrency: number;
     perHostDelayMs: number;
     denyParamPrefixes: string[];
-    mode?: 'html' | 'js' | 'auto';
+    mode?: 'html';
     scheduleId?: number;
     runAudits?: boolean;
     auditDevice?: 'mobile' | 'desktop';
@@ -68,7 +68,7 @@ export function resetAuditCancellation(): void {
 }
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, mode = 'html', scheduleId, runAudits = false, auditDevice = 'desktop', captureLinkDetails = false } = options;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, scheduleId, runAudits = false, auditDevice = 'desktop', captureLinkDetails = false } = options;
     const { onLog, onPage, onDone, onAuditStart, onAuditComplete, onAuditResults } = events;
     const logger = Logger.getInstance();
     const db = getDatabase();
@@ -99,7 +99,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             startUrl,
             allowSubdomains,
             maxConcurrency,
-            mode,
+            mode: 'html',
             scheduleId,
             startedAt: new Date().toISOString(),
             totalPages: 0,
@@ -539,307 +539,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         },
     });
 
-    // Track main document response info for Playwright
-    const mainDocInfo = new Map<string, { status: number; contentType?: string }>();
-    // Track subresource timings and headers
-    const resourceStarts = new Map<string, number>();
-    const resourceInfo = new Map<string, { status?: number; contentType?: string; start?: number; end?: number }>();
-
-    // Optional Playwright crawler for JS-rendered pages
-    const jsFallbackUrls: Set<string> = new Set();
-    const playwrightCrawler = new PlaywrightCrawler({
-        maxConcurrency: Math.max(1, Math.floor(maxConcurrency / 5)),
-        requestHandlerTimeoutSecs: 90,
-        preNavigationHooks: [
-            async ({ request, page }) => {
-                requestStartTimes.set(request.url, Date.now());
-                const targetUrl = request.url;
-
-                const onReq = (req: any) => {
-                    try { resourceStarts.set(req.url(), Date.now()); } catch {}
-                };
-                const onResp = async (resp: any) => {
-                    try {
-                        const rurl = resp.url();
-                        const status = resp.status();
-                        const headers = await resp.headers().catch(() => ({} as any));
-                        const contentType = headers?.['content-type'];
-                        const end = Date.now();
-                        const start = resourceStarts.get(rurl);
-                        resourceInfo.set(rurl, { status, contentType, start, end });
-
-                        if (rurl === targetUrl) {
-                            mainDocInfo.set(targetUrl, { status, contentType });
-                        }
-                    } catch {}
-                };
-
-                page.on('request', onReq);
-                page.on('response', onResp);
-                setTimeout(() => {
-                    try { page.off('request', onReq); } catch {}
-                    try { page.off('response', onResp); } catch {}
-                }, 20000);
-            }
-        ],
-        requestHandler: async ({ request, page, enqueueLinks, log: reqLog }) => {
-            const { url } = request;
-            await page.waitForLoadState('domcontentloaded');
-            await page.waitForTimeout(500);
-            
-            // Calculate response time
-            const startTime = requestStartTimes.get(url) || Date.now();
-            const responseTime = Date.now() - startTime;
-            
-            // Extract page data
-            const title = await page.title() || 'No title';
-            const description = await page.$eval('meta[name="description"]', el => el.getAttribute('content')).catch(() => 'No description') || 'No description';
-            // Use captured main document response info if available
-            let mainStatus: number | undefined = mainDocInfo.get(url)?.status;
-            let mainContentType: string | undefined = mainDocInfo.get(url)?.contentType;
-            // Additional fallbacks for content type
-            const docContentType = await page.evaluate(() => document.contentType).catch(() => undefined);
-            const metaHttpEquiv = await page.$eval('meta[http-equiv="Content-Type"]', el => el.getAttribute('content')).catch(() => undefined);
-            const resolvedJsContentType = mainContentType || docContentType || metaHttpEquiv || 'text/html';
-            const resolvedJsStatus = typeof mainStatus === 'number' && mainStatus > 0 ? mainStatus : 200;
-
-            // Compute word count from a cloned DOM to avoid affecting link extraction
-            const wordCount = await page.evaluate(() => {
-                try {
-                    const body = document.body;
-                    if (!body) return 0;
-                    const clone = body.cloneNode(true) as HTMLElement;
-                    clone.querySelectorAll('script, style, noscript, meta, link').forEach(el => el.remove());
-                    const text = (clone.innerText || clone.textContent || '').trim();
-                    return text ? text.split(/\s+/).length : 0;
-                } catch { return 0; }
-            });
-
-            const pageId = db.insertPage({
-                sessionId,
-                url,
-                title,
-                description,
-                contentType: resolvedJsContentType,
-                lastModified: null,
-                statusCode: resolvedJsStatus,
-                responseTime: responseTime,
-                wordCount,
-                timestamp: new Date().toISOString(),
-                success: true,
-                errorMessage: null
-            });
-            
-            onLog?.(`JS-rendered: ${url}`);
-            onPage?.(url);
-
-            // Extract CSS files
-            const cssLinks = await page.$$eval('link[rel="stylesheet"][href]', (links) => 
-                links.map(link => link.getAttribute('href')).filter(Boolean)
-            );
-            
-            for (const href of cssLinks) {
-                if (!href) continue;
-                let absolute: string;
-                try {
-                    absolute = new URL(href, url).toString();
-                } catch {
-                    continue;
-                }
-                
-                if (!emittedCss.has(absolute)) {
-                    emittedCss.add(absolute);
-                    const info = resourceInfo.get(absolute);
-                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
-                    db.upsertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'css',
-                        title: '',
-                        description: 'CSS file',
-                        contentType: info?.contentType || 'text/css',
-                        statusCode: info?.status ?? null,
-                        responseTime: rt,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            }
-
-            // Extract JS files
-            const jsScripts = await page.$$eval('script[src]', (scripts) => 
-                scripts.map(script => script.getAttribute('src')).filter(Boolean)
-            );
-            
-            for (const src of jsScripts) {
-                if (!src) continue;
-                let absolute: string;
-                try {
-                    absolute = new URL(src, url).toString();
-                } catch {
-                    continue;
-                }
-                
-                if (!emittedJs.has(absolute)) {
-                    emittedJs.add(absolute);
-                    const info = resourceInfo.get(absolute);
-                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
-                    db.upsertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'js',
-                        title: '',
-                        description: 'JavaScript file',
-                        contentType: info?.contentType || 'application/javascript',
-                        statusCode: info?.status ?? null,
-                        responseTime: rt,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            }
-
-            // Extract images
-            const images = await page.$$eval('img[src]', (imgs) => 
-                imgs.map(img => ({
-                    src: img.getAttribute('src'),
-                    alt: img.getAttribute('alt') || ''
-                })).filter(img => img.src)
-            );
-            
-            for (const img of images) {
-                if (!img.src) continue;
-                let absolute: string;
-                try {
-                    absolute = new URL(img.src, url).toString();
-                } catch {
-                    continue;
-                }
-                
-                if (!emittedImg.has(absolute)) {
-                    emittedImg.add(absolute);
-                    const info = resourceInfo.get(absolute);
-                    const rt = info?.start && info?.end ? (info.end - info.start) : null;
-                    db.upsertResource({
-                        sessionId,
-                        pageId: pageId,
-                        url: absolute,
-                        resourceType: 'image',
-                        title: img.alt,
-                        description: 'Image',
-                        contentType: info?.contentType || 'image/*',
-                        statusCode: info?.status ?? null,
-                        responseTime: rt,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            }
-
-            // Extract external links
-            const links = await page.$$eval('a[href]', (anchors) => 
-                anchors.map(anchor => anchor.getAttribute('href')).filter(Boolean)
-            );
-            
-            for (const href of links) {
-                if (!href) continue;
-                let absolute: string;
-                try {
-                    absolute = new URL(href, url).toString();
-                } catch {
-                    continue;
-                }
-                if (!isValidHttpLink(absolute)) continue;
-                
-                // Check if it's external
-                if (!isSameSite(absolute, allowedHost, allowSubdomains)) {
-                    if (!emittedExternal.has(absolute)) {
-                        emittedExternal.add(absolute);
-                        const info = resourceInfo.get(absolute);
-                        const rt = info?.start && info?.end ? (info.end - info.start) : null;
-                        db.upsertResource({
-                            sessionId,
-                            pageId: pageId,
-                            url: absolute,
-                            resourceType: 'external',
-                            title: '',
-                            description: 'External link',
-                            contentType: info?.contentType || 'text/html',
-                            statusCode: info?.status ?? null,
-                            responseTime: rt,
-                            timestamp: new Date().toISOString()
-                        });
-                    }
-                }
-            }
-            
-            await enqueueLinks({
-                strategy: 'same-domain',
-                transformRequestFunction: (req) => {
-                    if (!isSameSite(req.url, allowedHost, allowSubdomains)) return null;
-                    const canon = canonicalizeUrl(req.url, { allowedHost, allowSubdomains, denyParamPrefixes });
-                    if (!canon) return null;
-                    req.url = canon;
-                    return req;
-                },
-            });
-        },
-        errorHandler: async ({ request, error }) => {
-            const warn = `Playwright failed ${request.url}: ${(error as Error).message}`;
-            log.warning(warn);
-            onLog?.(warn);
-            
-            // Calculate response time for failed request
-            const startTime = requestStartTimes.get(request.url) || Date.now();
-            const responseTime = Date.now() - startTime;
-            
-            // Store failed request data
-            db.insertPage({
-                sessionId,
-                url: request.url,
-                title: 'JS Request Failed',
-                description: `Playwright Error: ${(error as Error).message}`,
-                contentType: 'Unknown',
-                lastModified: null,
-                statusCode: 0,
-                responseTime: responseTime,
-                wordCount: 0,
-                timestamp: new Date().toISOString(),
-                success: false,
-                errorMessage: (error as Error).message
-            });
-            
-            // Record failed request in metrics
-            if (metricsCollector) {
-                metricsCollector.recordRequest({
-                    url: request.url,
-                    statusCode: 0,
-                    responseTime: responseTime,
-                    timestamp: new Date().toISOString(),
-                    success: false,
-                    error: (error as Error).message
-                });
-            }
-            
-            onPage?.(request.url);
-        },
-        headless: true,
-        launchContext: { 
-            launchOptions: {
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            }
-        },
-    });
-
-    if (mode === 'js') {
-        await playwrightCrawler.run([{ url: start.href }]);
-    } else {
-        // Consume the provided RequestQueue populated above
-        await cheerioCrawler.run();
-        if (mode === 'auto' && jsFallbackUrls.size > 0) {
-            onLog?.(`Auto mode: retrying ${jsFallbackUrls.size} page(s) with JS renderer`);
-            await playwrightCrawler.run(Array.from(jsFallbackUrls).map((u) => ({ url: u })));
-        }
-    }
+    // Consume the provided RequestQueue populated above
+    await cheerioCrawler.run();
 
     // Update crawl session with final stats
     const totalPages = db.getPageCount(sessionId);

@@ -36,7 +36,6 @@
     "express": "^4.19.2",
     "nodemailer": "^7.0.6",
     "normalize-url": "^8.1.0",
-    "playwright": "^1.47.2",
     "react": "^19.1.1",
     "react-d3-tree": "^3.6.6",
     "react-dom": "^19.1.1",

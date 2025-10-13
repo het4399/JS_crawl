@@ -24,9 +24,7 @@ interface CrawlData {
 
 function App() {
   const [url, setUrl] = useState('');
-  const [allowSubdomains, setAllowSubdomains] = useState(false);
-  const [maxConcurrency, setMaxConcurrency] = useState(50);
-  const [mode, setMode] = useState('auto');
+  const [allowSubdomains, setAllowSubdomains] = useState(true);
   const [runAudits, setRunAudits] = useState(false);
   const [auditDevice, setAuditDevice] = useState<'mobile' | 'desktop'>('desktop');
   const [captureLinkDetails, setCaptureLinkDetails] = useState(false);
@@ -322,9 +320,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           url, 
-          allowSubdomains, 
-          maxConcurrency, 
-          mode,
+          allowSubdomains: true, 
           runAudits,
           auditDevice,
           captureLinkDetails
@@ -554,53 +550,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="controls-section">
-                <h3>⚙️ Crawl Options</h3>
-                <div className="controls-row">
-              <div className="control-group">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={allowSubdomains}
-                    onChange={(e) => setAllowSubdomains(e.target.checked)}
-                    disabled={isCrawling || isAuditing}
-                  />
-                  Subdomains
-                </label>
-              </div>
-
-              <div className="control-group">
-                <label>
-                  Concurrency:
-                  <input
-                    type="number"
-                    min="1"
-                    max="500"
-                    value={maxConcurrency}
-                    onChange={(e) => setMaxConcurrency(Number(e.target.value))}
-                    className="number-input"
-                    disabled={isCrawling || isAuditing}
-                  />
-                </label>
-              </div>
-
-              <div className="control-group">
-                    <label>
-                      Mode:
-                <select
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value)}
-                  className="select"
-                  disabled={isCrawling || isAuditing}
-                >
-                  <option value="html">HTML only (fast)</option>
-                  <option value="auto">Auto (fallback to JS)</option>
-                  <option value="js">JS only (Playwright)</option>
-                </select>
-                    </label>
-                  </div>
-                </div>
-              </div>
+              
 
               <div className="controls-section">
                 <h3>📊 Analysis Options</h3>

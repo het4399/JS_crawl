@@ -7,7 +7,6 @@ interface Schedule {
     description: string;
     startUrl: string;
     allowSubdomains: boolean;
-    maxConcurrency: number;
     mode: string;
     cronExpression: string;
     enabled: boolean;
@@ -23,8 +22,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({ schedule, onClose }) => {
         name: '',
         description: '',
         startUrl: '',
-        allowSubdomains: false,
-        maxConcurrency: 5,
+        allowSubdomains: true,
         mode: 'html',
         cronExpression: '0 9 * * *',
         enabled: true
@@ -44,7 +42,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({ schedule, onClose }) => {
                 description: schedule.description,
                 startUrl: schedule.startUrl,
                 allowSubdomains: schedule.allowSubdomains,
-                maxConcurrency: schedule.maxConcurrency,
                 mode: schedule.mode,
                 cronExpression: schedule.cronExpression,
                 enabled: schedule.enabled
@@ -212,59 +209,9 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({ schedule, onClose }) => {
                         />
                     </div>
 
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label htmlFor="mode" className="form-label">
-                                Crawl Mode
-                                <span className="label-help">Choose how to crawl the website</span>
-                            </label>
-                            <select
-                                id="mode"
-                                name="mode"
-                                value={formData.mode}
-                                onChange={handleInputChange}
-                                className="form-select"
-                            >
-                                <option value="html">HTML Only (Fast)</option>
-                                <option value="js">JavaScript (Playwright)</option>
-                                <option value="auto">Auto (Smart)</option>
-                            </select>
-                        </div>
+                    
 
-                        <div className="form-group">
-                            <label htmlFor="maxConcurrency" className="form-label">
-                                Max Concurrency
-                                <span className="label-help">Number of parallel requests (1-20)</span>
-                            </label>
-                            <input
-                                type="number"
-                                id="maxConcurrency"
-                                name="maxConcurrency"
-                                value={formData.maxConcurrency}
-                                onChange={handleInputChange}
-                                min="1"
-                                max="20"
-                                className="form-input"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="form-group checkbox-group">
-                        <label className="checkbox-label">
-                            <input
-                                type="checkbox"
-                                name="allowSubdomains"
-                                checked={formData.allowSubdomains}
-                                onChange={handleInputChange}
-                                className="checkbox-input"
-                            />
-                            <span className="checkbox-custom"></span>
-                            <span className="checkbox-text">
-                                Allow Subdomains
-                                <span className="checkbox-help">Include subdomains in the crawl</span>
-                            </span>
-                        </label>
-                    </div>
+                    
                 </div>
 
                 <div className="form-section">

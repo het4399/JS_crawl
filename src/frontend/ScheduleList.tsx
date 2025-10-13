@@ -204,7 +204,6 @@ const ScheduleList: React.FC = () => {
                             <p className="description">{schedule.description}</p>
                             <p className="url">URL: {schedule.startUrl}</p>
                             <p className="cron">Schedule: {getCronDescription(schedule.cronExpression)}</p>
-                            <p className="mode">Mode: {schedule.mode.toUpperCase()}</p>
                         </div>
 
                         <div className="schedule-stats">
