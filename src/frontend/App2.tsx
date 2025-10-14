@@ -6,6 +6,7 @@ import DataViewer from './DataViewer';
 import LinkExplorer from './LinkExplorer';
 import WebTree from './FixedWebTree';
 import ScheduleList from './ScheduleList';
+import AuditsPage from './AuditsPage';
 import { apiService, AnalysisResult } from './api';
 
 
@@ -35,7 +36,7 @@ const App2: React.FC = () => {
   } | null>(null);
 
   // Analysis tools state
-  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules'>('metrics');
+  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules' | 'audits'>('metrics');
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
   const [showWebTree, setShowWebTree] = useState(false);
@@ -53,6 +54,17 @@ const App2: React.FC = () => {
     averageCls: number;
     averagePerformanceScore: number;
   } | null>(null);
+
+  // Formatting helpers for audit table
+  function formatMs(value?: number): string {
+    if (value == null || !Number.isFinite(value)) return '-';
+    return `${Math.round(value)}ms`;
+  }
+
+  function formatScore(value?: number): string {
+    if (value == null || !Number.isFinite(value)) return '-';
+    return `${Math.round(value)}/100`;
+  }
 
   // Reuse prompt state (like original crawler)
   const [showReusePrompt, setShowReusePrompt] = useState(false);
@@ -202,7 +214,7 @@ const App2: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '20px 20px' }}>
+    <div className="min-h-screen bg-black aeo-dark" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '20px 20px' }}>
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -403,6 +415,16 @@ const App2: React.FC = () => {
                   🌳 Site Structure
                 </button>
                 <button
+                  onClick={() => setActiveView('audits')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'audits'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔍 Performance Audits
+                </button>
+                <button
                   onClick={() => setActiveView('schedules')}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     activeView === 'schedules'
@@ -447,36 +469,12 @@ const App2: React.FC = () => {
                 </div>
               )}
               {activeView === 'schedules' && <ScheduleList />}
+              {activeView === 'audits' && <AuditsPage />}
             </div>
           </div>
         )}
 
-        {/* Audit Results Section */}
-        {auditStats && runAudits && (
-          <div className="max-w-7xl mx-auto mb-8">
-            <div className="bg-gray-800 rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-semibold text-white mb-4">🔍 Performance Audit Results</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-gray-700 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-white">{auditStats.successful}/{auditStats.total}</div>
-                  <div className="text-sm text-gray-300">Successful Audits</div>
-                </div>
-                <div className="bg-gray-700 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-white">{auditStats.successRate.toFixed(1)}%</div>
-                  <div className="text-sm text-gray-300">Success Rate</div>
-                </div>
-                <div className="bg-gray-700 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-white">{Math.round(auditStats.averagePerformanceScore)}/100</div>
-                  <div className="text-sm text-gray-300">Avg Performance</div>
-                </div>
-                <div className="bg-gray-700 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-white">{Math.round(auditStats.averageLcp)}ms</div>
-                  <div className="text-sm text-gray-300">Avg LCP</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Audit results now live under the dedicated "Performance Audits" tab */}
 
         {/* Crawler Section - Below Metrics */}
         {runCrawl && (isCrawling || pageCount > 0) && (

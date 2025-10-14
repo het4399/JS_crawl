@@ -1199,6 +1199,109 @@ body {
   box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
 }
 
+/* Dark theme table styles for audits (used inside App2) */
+.aeo-dark .panel {
+  background: #1f2937; /* gray-800 */
+  border-color: #374151;
+}
+
+.aeo-dark .panel h3 { color: #e5e7eb; }
+
+/* Controls */
+.aeo-dark .panel .select {
+  background: #111827; /* gray-900 */
+  color: #e5e7eb; /* gray-200 */
+  border: 1px solid #374151; /* gray-700 */
+}
+
+.aeo-dark .panel .btn {
+  background: #2563eb; /* blue-600 */
+  color: #ffffff;
+}
+
+.aeo-dark .panel .btn:disabled {
+  background: #374151; /* gray-700 */
+  color: #9ca3af; /* gray-400 */
+}
+
+.aeo-dark .panel .btn:hover:not(:disabled) {
+  background: #1d4ed8; /* blue-700 */
+}
+
+.aeo-dark .table-wrapper {
+  background: #0b0f19;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
+
+.aeo-dark .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #e5e7eb; /* gray-200 */
+  background: #0b0f19; /* very dark */
+}
+
+.aeo-dark .data-table thead tr {
+  background: #0f172a; /* slate-900 */
+}
+
+.aeo-dark .data-table th {
+  color: #e5e7eb;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #374151; /* gray-700 */
+}
+
+.aeo-dark .data-table td {
+  padding: 10px 12px;
+  border-top: 1px solid #1f2937; /* gray-800 */
+  color: #e5e7eb;
+}
+
+.aeo-dark .data-table tr:nth-child(even) {
+  background: #0f172a; /* slate-900 */
+}
+
+.aeo-dark .data-table tr:hover {
+  background: #1f2937; /* gray-800 */
+}
+
+.aeo-dark .data-table tr {
+  transition: background-color 120ms ease-in-out;
+}
+
+/* Strong override to beat generic .data-table hover from other CSS */
+.aeo-dark .panel .data-table tr:hover,
+.aeo-dark .panel .data-table tbody tr:hover td,
+.aeo-dark .panel .data-table tbody tr:hover a {
+  background: #1f2937 !important; /* keep dark */
+  color: #e5e7eb !important;      /* keep light text */
+}
+
+/* Header chips and badges */
+.aeo-dark .chip { background: #374151; color: #e5e7eb; }
+.aeo-dark .chip.success { background: #065f46; color: #d1fae5; }
+.aeo-dark .chip.error { background: #7f1d1d; color: #fecaca; }
+.aeo-dark .chip.warn { background: #78350f; color: #fde68a; }
+
+/* Link contrast */
+.aeo-dark .panel a { color: #93c5fd; }
+.aeo-dark .panel a:hover { color: #bfdbfe; }
+
+.aeo-dark .data-table a {
+  color: #60a5fa; /* blue-400 */
+}
+
+.aeo-dark .data-table a:hover {
+  color: #93c5fd; /* blue-300 */
+}
+
+/* Improve chip contrast in dark */
+.aeo-dark .chip { background: #374151; color: #e5e7eb; }
+.aeo-dark .chip.success { background: #065f46; color: #d1fae5; }
+.aeo-dark .chip.error { background: #7f1d1d; color: #fecaca; }
+.aeo-dark .chip.warn { background: #78350f; color: #fde68a; }
+
 .audit-error {
   color: #F44336;
   font-size: 0.9rem;

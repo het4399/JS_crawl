@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import './AuditsPage.dark.css';
 
 type AuditItem = {
   id: string;
@@ -72,7 +73,7 @@ export default function AuditsPage() {
   }, [endpoint]);
 
   return (
-    <div className="panel">
+    <div className="panel audits-dark">
       <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h3 style={{ margin: 0 }}>📈 Audits</h3>
         <select value={device} onChange={(e) => setDevice(e.target.value as any)} className="select">

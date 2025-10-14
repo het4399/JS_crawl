@@ -1,0 +1,73 @@
+.audits-dark {
+  background: #1f2937; /* gray-800 */
+  border: 1px solid #374151;
+}
+
+.audits-dark .panel-header h3 { color: #e5e7eb; }
+
+.audits-dark .select {
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+}
+
+.audits-dark .btn {
+  background: #2563eb;
+  color: #fff;
+  padding: 8px 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.audits-dark .btn:hover:not(:disabled) { background: #1d4ed8; }
+.audits-dark .btn:disabled { background: #374151; color: #9ca3af; }
+
+.audits-dark .table-wrapper { background: #0b0f19; border: 1px solid #1f2937; border-radius: 8px; }
+.audits-dark .data-table { width: 100%; border-collapse: collapse; color: #e5e7eb; background: #0b0f19; }
+.audits-dark .data-table thead tr { background: #0b1220; }
+.audits-dark .data-table thead th { 
+  background: #0b1220 !important; 
+  color: #f3f4f6 !important; 
+  padding: 12px 14px; 
+  font-weight: 700; 
+  letter-spacing: 0.04em; 
+  border-bottom: 2px solid #334155; /* slate-700 */
+}
+.audits-dark .data-table th {
+  color: #f3f4f6; /* gray-100 */
+  text-align: left;
+  padding: 12px 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #475569; /* slate-600 for clearer separation */
+}
+.audits-dark .data-table td { padding: 12px 14px; border-top: 1px solid #0f1a2b; color: #e5e7eb; }
+.audits-dark .data-table tbody tr { border-bottom: 1px solid #0f1a2b; }
+.audits-dark .data-table tr:nth-child(even) { background: #0f172a; }
+.audits-dark .data-table tr { transition: background-color 120ms ease-in-out; }
+.audits-dark .data-table tr:hover { background: #1f2937; }
+.audits-dark .data-table a { color: #93c5fd; }
+.audits-dark .data-table a:hover { color: #bfdbfe; }
+
+.audits-dark .chip { 
+  background: #374151; 
+  color: #e5e7eb; 
+  border: 1px solid #4b5563; 
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2) inset; 
+  display: inline-block; 
+  width: auto; 
+  padding: 4px 10px; 
+  line-height: 1.1; 
+  border-radius: 6px; 
+  font-weight: 600; 
+  font-size: 12px;
+}
+.audits-dark .chip.success { background: #0e9f6e; color: #ecfdf5; border-color: #10b981; }
+.audits-dark .chip.error { background: #b91c1c; color: #fee2e2; border-color: #ef4444; }
+.audits-dark .chip.warn { background: #78350f; color: #fde68a; border-color: #92400e; }
+
+.audits-dark .data-table th,
+.audits-dark .data-table td { vertical-align: middle; }
+
