@@ -186,6 +186,20 @@ export class DatabaseService {
             )
         `);
 
+        // Create SEO cache table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS seo_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL UNIQUE,
+                parent_text TEXT,
+                keywords TEXT NOT NULL,
+                language TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        `);
+
         // Create resources table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS resources (
@@ -1680,6 +1694,116 @@ export class DatabaseService {
             linkCount: row.link_count,
             anchorTexts: row.anchor_texts ? row.anchor_texts.split('|').filter(Boolean) : []
         }));
+    }
+
+    // SEO Cache Methods
+    async cacheSeoData(url: string, seoData: {
+        parentText?: string;
+        keywords: Array<{ text: string; score: number; intent?: string }>;
+        language?: string;
+    }): Promise<void> {
+        const now = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+        
+        const stmt = this.db.prepare(`
+            INSERT OR REPLACE INTO seo_cache 
+            (url, parent_text, keywords, language, created_at, updated_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        stmt.run(
+            url,
+            seoData.parentText || null,
+            JSON.stringify(seoData.keywords),
+            seoData.language || null,
+            now,
+            now,
+            expiresAt
+        );
+    }
+
+    async getSeoData(url: string): Promise<{
+        parentText?: string;
+        keywords: Array<{ text: string; score: number; intent?: string }>;
+        language?: string;
+        isExpired: boolean;
+    } | null> {
+        const stmt = this.db.prepare(`
+            SELECT parent_text, keywords, language, expires_at 
+            FROM seo_cache 
+            WHERE url = ?
+        `);
+        
+        const row = stmt.get(url) as any;
+        if (!row) return null;
+        
+        const isExpired = new Date(row.expires_at) < new Date();
+        
+        return {
+            parentText: row.parent_text,
+            keywords: JSON.parse(row.keywords || '[]'),
+            language: row.language,
+            isExpired
+        };
+    }
+
+    async getSeoDataBatch(urls: string[]): Promise<Map<string, {
+        parentText?: string;
+        keywords: Array<{ text: string; score: number; intent?: string }>;
+        language?: string;
+        isExpired: boolean;
+    }>> {
+        if (urls.length === 0) return new Map();
+        
+        const placeholders = urls.map(() => '?').join(',');
+        const stmt = this.db.prepare(`
+            SELECT url, parent_text, keywords, language, expires_at 
+            FROM seo_cache 
+            WHERE url IN (${placeholders})
+        `);
+        
+        const rows = stmt.all(...urls) as any[];
+        const result = new Map();
+        
+        rows.forEach(row => {
+            const isExpired = new Date(row.expires_at) < new Date();
+            result.set(row.url, {
+                parentText: row.parent_text,
+                keywords: JSON.parse(row.keywords || '[]'),
+                language: row.language,
+                isExpired
+            });
+        });
+        
+        return result;
+    }
+
+    async clearExpiredSeoCache(): Promise<number> {
+        const stmt = this.db.prepare(`
+            DELETE FROM seo_cache 
+            WHERE expires_at < ?
+        `);
+        
+        const result = stmt.run(new Date().toISOString());
+        return result.changes;
+    }
+
+    async getSeoCacheStats(): Promise<{
+        totalEntries: number;
+        expiredEntries: number;
+        validEntries: number;
+    }> {
+        const totalStmt = this.db.prepare('SELECT COUNT(*) as count FROM seo_cache');
+        const expiredStmt = this.db.prepare('SELECT COUNT(*) as count FROM seo_cache WHERE expires_at < ?');
+        
+        const total = totalStmt.get() as any;
+        const expired = expiredStmt.get(new Date().toISOString()) as any;
+        
+        return {
+            totalEntries: total.count,
+            expiredEntries: expired.count,
+            validEntries: total.count - expired.count
+        };
     }
 
     close(): void {

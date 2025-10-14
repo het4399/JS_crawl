@@ -51,28 +51,76 @@ class ApiService {
     this.baseURL = baseURL;
   }
 
-  async analyzeUrl(url: string): Promise<AnalysisResult> {
+  async analyzeUrl(url: string, crawlerOptions?: {
+    allowSubdomains: boolean;
+    runAudits: boolean;
+    auditDevice: 'mobile' | 'desktop';
+    captureLinkDetails: boolean;
+  }): Promise<AnalysisResult> {
     try {
-      console.log(`Making API call to: ${this.baseURL}/analyze`);
-      console.log(`Analyzing URL: ${url}`);
+      if (crawlerOptions) {
+        // First, start the crawler
+        console.log(`Starting crawler for: ${url}`, crawlerOptions);
 
-      const response = await fetch(
-        `${this.baseURL}/analyze`,
-        {
+        const crawlResponse = await fetch('/crawl', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ url: url.trim() }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            url: url.trim(),
+            allowSubdomains: crawlerOptions.allowSubdomains,
+            runAudits: crawlerOptions.runAudits,
+            auditDevice: crawlerOptions.auditDevice,
+            captureLinkDetails: crawlerOptions.captureLinkDetails
+          })
+        });
+
+        if (!crawlResponse.ok) {
+          throw new Error('Crawler failed to start');
         }
-      );
 
-      const data = await response.json();
+        // Then get AEO analysis for the main URL
+        console.log(`Getting AEO analysis for: ${url}`);
+        
+        const aeoResponse = await fetch(
+          `${this.baseURL}/analyze`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: url.trim() }),
+          }
+        );
 
-      if (response.ok) {
-        return data;
+        if (!aeoResponse.ok) {
+          throw new Error('AEO analysis failed');
+        }
+
+        const aeoData = await aeoResponse.json();
+        return aeoData;
       } else {
-        throw new Error(data.error || 'Analysis failed');
+        // Call the AEO analyzer endpoint for single page analysis
+        console.log(`Making API call to: ${this.baseURL}/analyze`);
+        console.log(`Analyzing URL: ${url}`);
+
+        const response = await fetch(
+          `${this.baseURL}/analyze`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: url.trim() }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          return data;
+        } else {
+          throw new Error(data.error || 'Analysis failed');
+        }
       }
     } catch (error: any) {
       console.error('API Error:', error);
