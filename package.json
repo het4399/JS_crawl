@@ -36,7 +36,6 @@
     "nodemailer": "^7.0.6",
     "normalize-url": "^8.1.0",
     "react": "^19.1.1",
-    "react-d3-tree": "^3.6.6",
     "react-dom": "^19.1.1",
     "vite": "^7.1.6",
     "xml2js": "^0.6.2"

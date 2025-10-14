@@ -213,6 +213,7 @@ export default function WebTree({ onClose }: WebTreeProps) {
       
       const delayBetweenBatches = 50; // 50ms delay between requests
       let processedCount = 0;
+      const startedAt = Date.now();
       
       // Create a semaphore to control concurrency
       const semaphore = new Array(concurrency).fill(null);
@@ -245,8 +246,10 @@ export default function WebTree({ onClose }: WebTreeProps) {
         
         // Update progress with estimated time remaining
         processedCount++;
+        const elapsedMs = Date.now() - startedAt;
+        const avgPerItemMs = processedCount > 0 ? elapsedMs / processedCount : delayBetweenBatches;
         const remaining = urls.length - processedCount;
-        const estimatedTimeRemaining = remaining > 0 ? Math.ceil((remaining * delayBetweenBatches) / concurrency / 1000) : 0;
+        const estimatedTimeRemaining = remaining > 0 ? Math.ceil((remaining * avgPerItemMs) / 1000) : 0;
         setSeoProgress({ 
           current: processedCount, 
           total: urls.length,
@@ -420,13 +423,18 @@ export default function WebTree({ onClose }: WebTreeProps) {
       // Build a separate main keyword node as direct child of the URL node
       let childrenWithSeo: TidyTreeNode[] = [...baseChildren];
       if (seo && seo.parentText) {
+        // Attach SEO nodes without visual prefixes; mark internal types for keying
         const keywordChildren: TidyTreeNode[] = (seo.topKeywords || []).slice(0, 8).map((kw) => ({
-          text: `• ${kw}`,
-        }));
-        const mainKwNode: TidyTreeNode = {
-          text: `${seo.parentText}`,
+          text: kw,
+          // @ts-expect-error - attach internal type info for D3 keying
+          __type: 'kw'
+        } as any));
+        const mainKwNode = {
+          text: seo.parentText,
           children: keywordChildren.length ? keywordChildren : undefined,
-        };
+          // @ts-expect-error - attach internal type info for D3 keying
+          __type: 'seo'
+        } as any;
         childrenWithSeo = [mainKwNode, ...childrenWithSeo];
       }
 
@@ -436,6 +444,14 @@ export default function WebTree({ onClose }: WebTreeProps) {
       };
     };
     return mapNode(root);
+  }
+
+  function formatSeconds(totalSeconds?: number): string {
+    if (totalSeconds == null || !isFinite(totalSeconds)) return '--:--';
+    const s = Math.max(0, Math.round(totalSeconds));
+    const mm = Math.floor(s / 60).toString().padStart(2, '0');
+    const ss = (s % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
   }
 
   return (
@@ -519,12 +535,16 @@ export default function WebTree({ onClose }: WebTreeProps) {
                 SEO keywords
               </label>
               {seoEnabled && (seoLoading || seoBatchLoading) && (
-                <span className="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-sm">
-                  {seoBatchLoading ? (
-                    seoProgress ? 
-                      `Extracting ${seoProgress.current}/${seoProgress.total}${seoProgress.estimatedTimeRemaining ? ` (~${seoProgress.estimatedTimeRemaining}s left)` : ''}…` : 
-                      'Batch extracting…'
-                  ) : 'Extracting…'}
+                <span className="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-sm flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
+                  {seoBatchLoading && seoProgress ? (
+                    <>
+                      <span>Extracting {seoProgress.current}/{seoProgress.total}</span>
+                      <span className="opacity-80">ETA {formatSeconds(seoProgress.estimatedTimeRemaining)}</span>
+                    </>
+                  ) : (
+                    <span>Extracting…</span>
+                  )}
                 </span>
               )}
               {seoEnabled && seoError && <span className="px-2 py-1 bg-red-900 text-red-300 rounded text-sm">{seoError}</span>}
@@ -559,22 +579,52 @@ export default function WebTree({ onClose }: WebTreeProps) {
         {/* Tree Container */}
         <div 
           ref={containerRef} 
-          className="flex-1 bg-gray-900 overflow-hidden"
+          className="flex-1 bg-gray-900 overflow-hidden relative"
         >
-          {treeData ? (
-            <D3TidyTree 
-              key={`tree-${seoUpdateKey}`}
-              data={convertToTidy(treeData)!} 
-              height={containerSize.height} 
-              orientation={orientation === 'vertical' ? 'vertical' : 'horizontal'}
-              dx={siblingSeparation * 24}
-              dy={nonSiblingSeparation * 160}
-              onSelectPath={setBreadcrumb}
-              recenterKey={recenterKey}
-            />
-          ) : (
+          {(() => {
+            const isSeoBusy = seoEnabled && (seoLoading || seoBatchLoading);
+            if (!treeData) {
+              return (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  {loading ? 'Building tree structure...' : 'Configure options and click "Build Tree".'}
+                </div>
+              );
+            }
+            if (isSeoBusy) {
+              // Hide SVG entirely during SEO extraction
+              return null;
+            }
+            return (
+              <D3TidyTree 
+                data={convertToTidy(treeData)!} 
+                height={containerSize.height} 
+                orientation={orientation === 'vertical' ? 'vertical' : 'horizontal'}
+                dx={siblingSeparation * 24}
+                dy={nonSiblingSeparation * 160}
+                onSelectPath={setBreadcrumb}
+                recenterKey={recenterKey}
+              />
+            );
+          })()}
+          {!treeData && (
             <div className="flex items-center justify-center h-full text-gray-400">
               {loading ? 'Building tree structure...' : 'Configure options and click "Build Tree".'}
+            </div>
+          )}
+
+          {(seoEnabled && (seoLoading || seoBatchLoading)) && (
+            <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-[1px] flex items-center justify-center z-10">
+              <div className="flex items-center gap-3 text-yellow-200">
+                <span className="inline-block w-6 h-6 border-4 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
+                {seoBatchLoading && seoProgress ? (
+                  <div className="text-sm">
+                    <div className="font-semibold">Extracting keywords…</div>
+                    <div className="opacity-90">{seoProgress.current}/{seoProgress.total} • ETA {formatSeconds(seoProgress.estimatedTimeRemaining)}</div>
+                  </div>
+                ) : (
+                  <div className="text-sm font-semibold">Extracting keywords…</div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -19,27 +19,79 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
   const currentTransformRef = useRef<d3.ZoomTransform | null>(null);
   const stableCenterRef = useRef<{ x: number; y: number } | null>(null);
   const clickGuardRef = useRef<boolean>(false);
-  const uidRef = useRef<number>(0);
+  const collapsedByKeyRef = useRef<Map<string, boolean>>(new Map());
+  const lastFocusedNodeKeyRef = useRef<string | null>(null);
+  const prevSnapshotRef = useRef<{
+    dataHash: string;
+    height: number;
+    orientation: 'horizontal' | 'vertical';
+    dx?: number;
+    dy?: number;
+    recenterKey?: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!data || !ref.current) return;
 
+    // Avoid rebuilding the tree when the parent recreates the same data by reference.
+    // Serialize only necessary fields for a stable hash.
+    const dataHash = JSON.stringify(data);
+    const snapshot = { dataHash, height, orientation, dx: dxProp, dy: dyProp, recenterKey };
+    if (prevSnapshotRef.current
+      && prevSnapshotRef.current.dataHash === snapshot.dataHash
+      && prevSnapshotRef.current.height === snapshot.height
+      && prevSnapshotRef.current.orientation === snapshot.orientation
+      && prevSnapshotRef.current.dx === snapshot.dx
+      && prevSnapshotRef.current.dy === snapshot.dy
+      && prevSnapshotRef.current.recenterKey === snapshot.recenterKey) {
+      // Nothing material changed; skip rebuild to prevent jitter
+      return;
+    }
+    prevSnapshotRef.current = snapshot;
+
     const root = d3.hierarchy<TreeNode>(data, d => d.children);
 
-    // Assign stable IDs to data (persist across updates)
+    // Assign stable keys based on the textual path to persist across updates
     (root as any).eachBefore((n: any) => {
-      if (n.data && n.data.__uid == null) {
-        uidRef.current += 1;
-        n.data.__uid = uidRef.current;
-      }
-      n.id = n.data.__uid;
+      const parentKey = n.parent?.data?.__key || '';
+      const myLabel = (n.data?.text ?? '').replace(/\s+/g, ' ').trim();
+      // Use internal type markers if provided (from conversion), else default to 'url'
+      const typeTag = (n.data && (n.data as any).__type) ? String((n.data as any).__type) : 'url';
+      const myKey = parentKey ? `${parentKey} > ${typeTag}:${myLabel}` : `${typeTag}:${myLabel}`;
+      n.data.__key = myKey;
+      n.id = myKey;
     });
 
-    // Show all levels initially; no depth limit
+    // Helper collapse/expand utilities
+    function collapse(d: any) {
+      if (d.children) {
+        d._children = d.children;
+        d.children = null;
+      }
+    }
+
+    function expand(d: any) {
+      if (d._children) {
+        d.children = d._children;
+        d._children = null;
+      }
+    }
+
+    // Assign hidden storage for children; restore previous collapsed state if known
     (root as any).descendants().forEach((d: any) => {
-      d._children = d.children;
-      // Keep children visible initially (don't collapse)
-      d.children = d.children;
+      d._children = d._children || d.children;
+      const key = d.data.__key;
+      const state = collapsedByKeyRef.current.get(key);
+      if (state === true) {
+        d.children = null; // explicitly collapsed
+      } else if (state === false) {
+        d.children = d._children; // explicitly expanded
+      } else {
+        // No stored state; default by depth to avoid expanding whole tree and flicker
+        d.children = d.depth > 1 ? null : d._children;
+        // Seed the map so subsequent renders are stable
+        collapsedByKeyRef.current.set(key, d.depth > 1);
+      }
     });
 
     const width = Math.min(1000, (root.height + 1) * 220);
@@ -84,9 +136,14 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
     (root as any).x0 = 0;
     (root as any).y0 = 0;
 
-    didCenterRef.current = false;
-    stableCenterRef.current = null; // Reset stable center for new data
-    update(root as any);
+    // Preserve previous centering/transform across renders
+    // Choose update source: last focused node if available, else root
+    let updateSource: any = root;
+    if (lastFocusedNodeKeyRef.current) {
+      const match = (root as any).descendants().find((n: any) => n.data.__key === lastFocusedNodeKeyRef.current);
+      if (match) updateSource = match;
+    }
+    update(updateSource as any);
 
     function update(source: any) {
       const nodes = (root as any).descendants().reverse();
@@ -126,13 +183,44 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
       // Restore the zoom/pan transform to prevent jumping
       gZoom.attr('transform', currentTransform.toString());
 
+      // Key nodes by both path key and a stable type to prevent SEO keyword
+      // synthetic nodes from colliding with URL path nodes that share labels.
       const node = g.selectAll<SVGGElement, any>('g.node')
-        .data(nodes, (d: any) => d.data.__uid);
+        .data(nodes, (d: any) => `${d.data.__key || d.data.text}`);
 
       const nodeEnter = node.enter().append('g')
         .attr('class', 'node')
-        .attr('transform', () => `translate(${source.y0},${source.x0})`)
-        .attr('cursor', 'pointer');
+        .attr('transform', () => `translate(${orientation === 'horizontal' ? source.y0 : source.x0},${orientation === 'horizontal' ? source.x0 : source.y0})`)
+        .attr('cursor', 'pointer')
+        .on('dblclick', (_event: any, d: any) => {
+          // Guard so the single-click handler below does not also run
+          clickGuardRef.current = true;
+          // Collapse/expand entire subtree on double click
+          _event.stopPropagation();
+          // If leaf, do nothing
+          if (!d.children && !d._children) {
+            setTimeout(() => { clickGuardRef.current = false; }, 0);
+            return;
+          }
+          const willCollapse = !!d.children; // if currently expanded, collapse subtree
+          (d as any).each((n: any) => {
+            if (willCollapse) {
+              collapsedByKeyRef.current.set(n.data.__key, true);
+              n._children = n._children || n.children;
+              n.children = null;
+            } else {
+              collapsedByKeyRef.current.set(n.data.__key, false);
+              if (n._children) {
+                n.children = n._children;
+                n._children = null;
+              }
+            }
+          });
+          lastFocusedNodeKeyRef.current = d.data.__key;
+          update(d);
+          // Release the guard shortly after to allow future clicks
+          setTimeout(() => { clickGuardRef.current = false; }, 0);
+        });
 
       nodeEnter.append('circle')
         .attr('r', 1e-6)
@@ -159,36 +247,57 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
       // Ensure clicks work on all nodes (not just newly entered)
       nodeUpdate.on('click', null).on('click', (_event: any, d: any) => {
         _event.stopPropagation();
-        
+        if (clickGuardRef.current) return; // skip if dblclick just fired
+        // If leaf, don't mutate tree structure
+        if (!d.children && !d._children) {
+          const isUrlNode = (d.data && (d.data as any).__type) ? String((d.data as any).__type) === 'url' : true;
+          if (onSelectPath && isUrlNode) {
+            const path: string[] = [];
+            let p: any = d;
+            while (p) { path.unshift(p.data?.text ?? ''); p = p.parent; }
+            onSelectPath(path);
+          }
+          return;
+        }
         // Toggle children
         if (d.children) {
+          collapsedByKeyRef.current.set(d.data.__key, true);
           d._children = d.children;
           d.children = null;
         } else {
+          collapsedByKeyRef.current.set(d.data.__key, false);
           d.children = d._children;
           d._children = null;
         }
         
-        if (onSelectPath) {
+        const isUrlNode2 = (d.data && (d.data as any).__type) ? String((d.data as any).__type) === 'url' : true;
+        if (onSelectPath && isUrlNode2) {
           const path: string[] = [];
           let p: any = d;
           while (p) { path.unshift(p.data?.text ?? ''); p = p.parent; }
           onSelectPath(path);
         }
-        
-        // Re-render without transition to avoid flicker
+        lastFocusedNodeKeyRef.current = d.data.__key;
+        // Re-render
+        // Update from clicked node only, do not rebuild from root
         update(d);
       });
 
-      // Apply instant positioning (no transition)
-      nodeUpdate.attr('transform', (d: any) => orientation === 'horizontal' ? `translate(${d.y},${d.x})` : `translate(${d.x},${d.y})`);
+      // Smooth transition positioning
+      const transition = (svg as any).transition().duration(250);
+      nodeEnter.transition(transition)
+        .attr('transform', (d: any) => orientation === 'horizontal' ? `translate(${d.y},${d.x})` : `translate(${d.x},${d.y})`);
+      (nodeUpdate as any).transition(transition)
+        .attr('transform', (d: any) => orientation === 'horizontal' ? `translate(${d.y},${d.x})` : `translate(${d.x},${d.y})`);
 
       nodeUpdate.select('circle')
         .attr('r', 6)
         .attr('fill', (d: any) => d._children && !d.children ? '#6b7280' : '#3b82f6')
         .style('cursor', 'pointer');
 
-      const nodeExit = node.exit().remove();
+      node.exit().transition(transition)
+        .attr('transform', () => `translate(${orientation === 'horizontal' ? source.y : source.x},${orientation === 'horizontal' ? source.x : source.y})`)
+        .remove();
 
       const link = g.selectAll<SVGPathElement, any>('path.link')
         .data(links, (d: any) => d.target.id);
@@ -204,13 +313,14 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
         .attr('stroke-width', 2)
         .style('opacity', 0.7);
 
-      (link as any).merge(linkEnter as any).attr('d', diagonal as any);
-      link.exit().remove();
+      (link as any).merge(linkEnter as any).transition(transition).attr('d', diagonal as any);
+      link.exit().transition(transition).remove();
 
       (root as any).eachBefore((d: any) => {
         d.x0 = d.x;
         d.y0 = d.y;
       });
+      // Note: Auto-centering on node interaction is intentionally disabled to avoid view jumps
     }
   }, [data, height, orientation, dxProp, dyProp, recenterKey]);
 
