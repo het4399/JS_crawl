@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 import uvicorn
+import os
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
 
 from .models import ExtractHtmlRequest, ExtractResponse
 from .extract import extract_keywords_from_html
@@ -9,6 +12,22 @@ from .utils import init_nlp
 
 # Initialize spaCy model
 init_nlp()
+
+# -----------------
+# Concurrency setup
+# -----------------
+_WORKERS = min(32, (os.cpu_count() or 4))
+_EXECUTOR = ProcessPoolExecutor(max_workers=_WORKERS)
+_SEMAPHORE = asyncio.Semaphore(_WORKERS * 2)
+
+def _extract_task(html: str, url: str, final_url: str, lang_guess: str):
+    """Synchronous wrapper executed in a worker process."""
+    return extract_keywords_from_html(
+        html=html,
+        url=url,
+        final_url=final_url,
+        lang_guess=lang_guess,
+    )
 
 app = FastAPI(
     title="SEO Keyword Extractor API",
@@ -43,17 +62,26 @@ async def extract_html(request: ExtractHtmlRequest):
         if not request.html or len(request.html.strip()) == 0:
             raise HTTPException(status_code=400, detail="HTML content is empty")
         
-        # Limit HTML size (2MB)
-        if len(request.html) > 2 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="HTML content too large (max 2MB)")
+        # Limit HTML size (configurable; default 5MB)
+        try:
+            max_html_mb = float(os.getenv("MAX_HTML_MB", "5"))
+        except ValueError:
+            max_html_mb = 5.0
+        max_bytes = int(max_html_mb * 1024 * 1024)
+        if len(request.html) > max_bytes:
+            raise HTTPException(status_code=400, detail=f"HTML content too large (max {int(max_html_mb)}MB)")
         
-        # Extract keywords
-        result = extract_keywords_from_html(
-            html=request.html,
-            url=request.url,
-            final_url=request.final_url,
-            lang_guess=request.lang_guess
-        )
+        # Extract keywords (CPU-bound) in process pool, bounded by semaphore
+        async with _SEMAPHORE:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                _EXECUTOR,
+                _extract_task,
+                request.html,
+                request.url,
+                request.final_url,
+                request.lang_guess,
+            )
         
         return ExtractResponse(**result)
         

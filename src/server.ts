@@ -22,7 +22,10 @@ const app = express();
 const logger = Logger.getInstance();
 
 app.use(cors());
-app.use(express.json());
+// Increase JSON body limit; configurable via BODY_LIMIT (default 5mb)
+const bodyLimit = process.env.BODY_LIMIT || '5mb';
+app.use(express.json({ limit: bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 app.use(express.static('public'));
 
 // Serve built frontend (Vite output)
