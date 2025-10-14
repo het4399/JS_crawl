@@ -5,6 +5,7 @@ import ResultsDisplay from './ResultsDisplay';
 import DataViewer from './DataViewer';
 import LinkExplorer from './LinkExplorer';
 import WebTree from './FixedWebTree';
+import ScheduleList from './ScheduleList';
 import { apiService, AnalysisResult } from './api';
 
 
@@ -34,7 +35,7 @@ const App2: React.FC = () => {
   } | null>(null);
 
   // Analysis tools state
-  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree'>('metrics');
+  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules'>('metrics');
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
   const [showWebTree, setShowWebTree] = useState(false);
@@ -53,7 +54,42 @@ const App2: React.FC = () => {
     averagePerformanceScore: number;
   } | null>(null);
 
+  // Reuse prompt state (like original crawler)
+  const [showReusePrompt, setShowReusePrompt] = useState(false);
+  const [recentStatus, setRecentStatus] = useState<null | {
+    running: { id: number; startedAt: string } | null;
+    latest: { id: number; status: string; startedAt: string; completedAt: string | null; totalPages: number; totalResources: number; duration: number | null } | null;
+    averageDurationSec: number | null;
+  }>(null);
+
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Check for recent crawl status (like original crawler)
+  const checkAndMaybePrompt = async () => {
+    if (!url.trim() || isCrawling) return;
+    try {
+      const res = await fetch(`/api/crawl/status?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        await handleSubmit();
+        return;
+      }
+      const data = await res.json();
+      const latest = data.latest as any;
+      const running = data.running as any;
+      const avg = data.averageDurationSec as number | null;
+      const now = Date.now();
+      const completedAt = latest?.completedAt || latest?.completed_at;
+      const recent = completedAt ? (now - new Date(completedAt).getTime()) <= 30 * 60 * 1000 : false;
+      if (running || recent) {
+        setRecentStatus({ running, latest, averageDurationSec: avg });
+        setShowReusePrompt(true);
+      } else {
+        await handleSubmit();
+      }
+    } catch {
+      await handleSubmit();
+    }
+  };
 
   // Set up Server-Sent Events for live crawling data
   useEffect(() => {
@@ -110,8 +146,8 @@ const App2: React.FC = () => {
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!url.trim()) return;
     
     setLoading(true);
@@ -180,7 +216,7 @@ const App2: React.FC = () => {
         </div>
 
         {/* Input Form */}
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto mb-8">
+        <form onSubmit={(e) => { e.preventDefault(); checkAndMaybePrompt(); }} className="max-w-4xl mx-auto mb-8">
           <div className="bg-white rounded-lg shadow-lg p-6">
             <div className="flex gap-4 mb-4">
               <div className="flex-1">
@@ -366,6 +402,16 @@ const App2: React.FC = () => {
                 >
                   🌳 Site Structure
                 </button>
+                <button
+                  onClick={() => setActiveView('schedules')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'schedules'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  📅 Schedules
+                </button>
               </div>
 
               {/* Tab Content */}
@@ -400,6 +446,7 @@ const App2: React.FC = () => {
                   </button>
                 </div>
               )}
+              {activeView === 'schedules' && <ScheduleList />}
             </div>
           </div>
         )}
@@ -547,6 +594,85 @@ const App2: React.FC = () => {
           <WebTree 
             onClose={() => setShowWebTree(false)} 
           />
+        )}
+
+        {/* Reuse Prompt Modal (like original crawler) */}
+        {showReusePrompt && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowReusePrompt(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent crawl detected</h3>
+                <div className="mb-4">
+                  {recentStatus?.running ? (
+                    <p className="text-gray-600">
+                      A crawl is currently running (started at {new Date(recentStatus.running.startedAt).toLocaleString()}).
+                    </p>
+                  ) : recentStatus?.latest ? (
+                    <p className="text-gray-600">
+                      Last crawl finished at {new Date(recentStatus.latest.completedAt || recentStatus.latest.startedAt).toLocaleString()} and took ~{recentStatus.latest.duration ?? recentStatus.averageDurationSec ?? 0}s.
+                    </p>
+                  ) : null}
+                </div>
+                
+                {recentStatus?.latest && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm">🔗 {url}</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">✅ {recentStatus.latest.totalPages} pages</span>
+                    <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-sm">📦 {recentStatus.latest.totalResources} resources</span>
+                    {recentStatus?.averageDurationSec != null && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-sm">⏱ Avg ~{recentStatus.averageDurationSec}s</span>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex gap-3">
+                  <button 
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+                    onClick={() => setShowReusePrompt(false)}
+                  >
+                    Cancel
+                  </button>
+                  
+                  {recentStatus?.running ? (
+                    <button 
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                      onClick={async () => {
+                        setShowReusePrompt(false);
+                        const runningId = recentStatus?.running?.id ?? null;
+                        setInitialViewerSessionId(runningId);
+                        setShowDataViewer(true);
+                      }}
+                    >
+                      📡 View Current Run
+                    </button>
+                  ) : (
+                    <>
+                      <button 
+                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        onClick={async () => {
+                          setShowReusePrompt(false);
+                          const lastId = recentStatus?.latest?.id ?? null;
+                          setInitialViewerSessionId(lastId);
+                          setShowDataViewer(true);
+                        }}
+                      >
+                        📊 View Last Results
+                      </button>
+                      <button 
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                        onClick={async () => { 
+                          setShowReusePrompt(false); 
+                          await handleSubmit(); 
+                        }}
+                      >
+                        🔁 Recrawl Now
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

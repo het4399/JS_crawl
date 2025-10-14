@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { Logger } from '../logging/Logger.js';
+import { AEOSchedule, AEOExecution } from '../scheduler/AEOScheduleManager.js';
 
 export interface CrawlSession {
     id: number;
@@ -197,6 +198,46 @@ export class DatabaseService {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
+            )
+        `);
+
+        // Create AEO schedules table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS aeo_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                start_url TEXT NOT NULL,
+                allow_subdomains INTEGER NOT NULL DEFAULT 1,
+                run_audits INTEGER NOT NULL DEFAULT 0,
+                audit_device TEXT NOT NULL DEFAULT 'desktop',
+                capture_link_details INTEGER NOT NULL DEFAULT 0,
+                cron_expression TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_run TEXT,
+                next_run TEXT,
+                total_runs INTEGER DEFAULT 0,
+                successful_runs INTEGER DEFAULT 0,
+                failed_runs INTEGER DEFAULT 0,
+                last_aeo_score REAL,
+                average_aeo_score REAL
+            )
+        `);
+
+        // Create AEO executions table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS aeo_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                schedule_id INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                pages_analyzed INTEGER DEFAULT 0,
+                average_aeo_score REAL,
+                duration INTEGER,
+                error_message TEXT,
+                FOREIGN KEY (schedule_id) REFERENCES aeo_schedules (id)
             )
         `);
 
@@ -1804,6 +1845,193 @@ export class DatabaseService {
             expiredEntries: expired.count,
             validEntries: total.count - expired.count
         };
+    }
+
+    // AEO Schedule Methods
+    insertAEOSchedule(schedule: Omit<AEOSchedule, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO aeo_schedules 
+            (name, description, start_url, allow_subdomains, run_audits, audit_device, capture_link_details, 
+             cron_expression, enabled, created_at, last_run, next_run, total_runs, successful_runs, failed_runs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            schedule.name,
+            schedule.description,
+            schedule.startUrl,
+            schedule.allowSubdomains ? 1 : 0,
+            schedule.runAudits ? 1 : 0,
+            schedule.auditDevice,
+            schedule.captureLinkDetails ? 1 : 0,
+            schedule.cronExpression,
+            schedule.enabled ? 1 : 0,
+            schedule.createdAt,
+            schedule.lastRun || null,
+            schedule.nextRun || null,
+            schedule.totalRuns,
+            schedule.successfulRuns,
+            schedule.failedRuns
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    getAEOSchedules(): AEOSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM aeo_schedules ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: Boolean(row.allow_subdomains),
+            runAudits: Boolean(row.run_audits),
+            auditDevice: row.audit_device,
+            captureLinkDetails: Boolean(row.capture_link_details),
+            cronExpression: row.cron_expression,
+            enabled: Boolean(row.enabled),
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs,
+            lastAeoScore: row.last_aeo_score,
+            averageAeoScore: row.average_aeo_score
+        }));
+    }
+
+    getEnabledAEOSchedules(): AEOSchedule[] {
+        const stmt = this.db.prepare('SELECT * FROM aeo_schedules WHERE enabled = 1 ORDER BY created_at DESC');
+        const rows = stmt.all() as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: Boolean(row.allow_subdomains),
+            runAudits: Boolean(row.run_audits),
+            auditDevice: row.audit_device,
+            captureLinkDetails: Boolean(row.capture_link_details),
+            cronExpression: row.cron_expression,
+            enabled: Boolean(row.enabled),
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs,
+            lastAeoScore: row.last_aeo_score,
+            averageAeoScore: row.average_aeo_score
+        }));
+    }
+
+    getAEOSchedule(id: number): AEOSchedule | null {
+        const stmt = this.db.prepare('SELECT * FROM aeo_schedules WHERE id = ?');
+        const row = stmt.get(id) as any;
+        
+        if (!row) return null;
+        
+        return {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            startUrl: row.start_url,
+            allowSubdomains: Boolean(row.allow_subdomains),
+            runAudits: Boolean(row.run_audits),
+            auditDevice: row.audit_device,
+            captureLinkDetails: Boolean(row.capture_link_details),
+            cronExpression: row.cron_expression,
+            enabled: Boolean(row.enabled),
+            createdAt: row.created_at,
+            lastRun: row.last_run,
+            nextRun: row.next_run,
+            totalRuns: row.total_runs,
+            successfulRuns: row.successful_runs,
+            failedRuns: row.failed_runs,
+            lastAeoScore: row.last_aeo_score,
+            averageAeoScore: row.average_aeo_score
+        };
+    }
+
+    updateAEOSchedule(id: number, updates: Partial<AEOSchedule>): void {
+        const fields = [];
+        const values = [];
+        
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+        if (updates.startUrl !== undefined) { fields.push('start_url = ?'); values.push(updates.startUrl); }
+        if (updates.allowSubdomains !== undefined) { fields.push('allow_subdomains = ?'); values.push(updates.allowSubdomains ? 1 : 0); }
+        if (updates.runAudits !== undefined) { fields.push('run_audits = ?'); values.push(updates.runAudits ? 1 : 0); }
+        if (updates.auditDevice !== undefined) { fields.push('audit_device = ?'); values.push(updates.auditDevice); }
+        if (updates.captureLinkDetails !== undefined) { fields.push('capture_link_details = ?'); values.push(updates.captureLinkDetails ? 1 : 0); }
+        if (updates.cronExpression !== undefined) { fields.push('cron_expression = ?'); values.push(updates.cronExpression); }
+        if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+        if (updates.lastRun !== undefined) { fields.push('last_run = ?'); values.push(updates.lastRun); }
+        if (updates.nextRun !== undefined) { fields.push('next_run = ?'); values.push(updates.nextRun); }
+        if (updates.totalRuns !== undefined) { fields.push('total_runs = ?'); values.push(updates.totalRuns); }
+        if (updates.successfulRuns !== undefined) { fields.push('successful_runs = ?'); values.push(updates.successfulRuns); }
+        if (updates.failedRuns !== undefined) { fields.push('failed_runs = ?'); values.push(updates.failedRuns); }
+        if (updates.lastAeoScore !== undefined) { fields.push('last_aeo_score = ?'); values.push(updates.lastAeoScore); }
+        if (updates.averageAeoScore !== undefined) { fields.push('average_aeo_score = ?'); values.push(updates.averageAeoScore); }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE aeo_schedules SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    deleteAEOSchedule(id: number): void {
+        const stmt = this.db.prepare('DELETE FROM aeo_schedules WHERE id = ?');
+        stmt.run(id);
+    }
+
+    insertAEOExecution(execution: Omit<AEOExecution, 'id'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO aeo_executions 
+            (schedule_id, started_at, completed_at, status, pages_analyzed, average_aeo_score, duration, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            execution.scheduleId,
+            execution.startedAt,
+            execution.completedAt || null,
+            execution.status,
+            execution.pagesAnalyzed,
+            execution.averageAeoScore || null,
+            execution.duration || null,
+            execution.errorMessage || null
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    getAEOExecutionHistory(scheduleId: number, limit: number = 50): AEOExecution[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM aeo_executions 
+            WHERE schedule_id = ? 
+            ORDER BY started_at DESC 
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(scheduleId, limit) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            scheduleId: row.schedule_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            status: row.status,
+            pagesAnalyzed: row.pages_analyzed,
+            averageAeoScore: row.average_aeo_score,
+            duration: row.duration,
+            errorMessage: row.error_message
+        }));
     }
 
     close(): void {
