@@ -12,7 +12,9 @@
     "build:frontend": "vite build",
     "crawl": "tsx src/index.ts",
     "audits:worker": "tsx src/audits/worker.ts",
-    "audits:cli": "tsx src/audits/cli.ts"
+    "audits:cli": "tsx src/audits/cli.ts",
+    "seo:worker": "tsx src/seo/redis-worker.ts",
+    "seo:cli": "tsx src/seo/redis-cli.ts"
   },
   "keywords": [],
   "author": "",
@@ -37,6 +39,8 @@
     "normalize-url": "^8.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "redis": "^4.6.0",
+    "ioredis": "^5.3.0",
     "vite": "^7.1.6",
     "xml2js": "^0.6.2"
   },

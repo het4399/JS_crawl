@@ -7,6 +7,7 @@ import LinkExplorer from './LinkExplorer';
 import WebTree from './FixedWebTree';
 import ScheduleList from './ScheduleList';
 import AuditsPage from './AuditsPage';
+import SeoQueueManager from './SeoQueueManager';
 import { apiService, AnalysisResult } from './api';
 
 
@@ -36,7 +37,7 @@ const App2: React.FC = () => {
   } | null>(null);
 
   // Analysis tools state
-  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules' | 'audits'>('metrics');
+  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules' | 'audits' | 'seo-queue'>('metrics');
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
   const [showWebTree, setShowWebTree] = useState(false);
@@ -434,6 +435,16 @@ const App2: React.FC = () => {
                 >
                   📅 Schedules
                 </button>
+                <button
+                  onClick={() => setActiveView('seo-queue')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'seo-queue'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔍 SEO Queue
+                </button>
               </div>
 
               {/* Tab Content */}
@@ -470,6 +481,9 @@ const App2: React.FC = () => {
               )}
               {activeView === 'schedules' && <ScheduleList />}
               {activeView === 'audits' && <AuditsPage />}
+              {activeView === 'seo-queue' && (
+                <SeoQueueManager onClose={() => setActiveView('metrics')} />
+              )}
             </div>
           </div>
         )}

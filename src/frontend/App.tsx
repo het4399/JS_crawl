@@ -7,6 +7,7 @@ import CronHistory from './CronHistory';
 import AuditScheduleManager from './AuditScheduleManager';
 import LinkExplorer from './LinkExplorer';
 import WebTree from './WebTree';
+import SeoQueueManager from './SeoQueueManager';
 
 interface CrawlData {
   url: string;
@@ -37,7 +38,7 @@ function App() {
   const [showLinkExplorer, setShowLinkExplorer] = useState(false);
   const [showWebTree, setShowWebTree] = useState(false);
   const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules'>('crawl');
+  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules' | 'seo-queue'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
@@ -531,6 +532,12 @@ function App() {
           >
             ⏰ Audit Schedules
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'seo-queue' ? 'active' : ''}`}
+            onClick={() => setActiveTab('seo-queue')}
+          >
+            🔍 SEO Queue
+          </button>
         </div>
 
         {activeTab === 'crawl' && (
@@ -710,6 +717,10 @@ function App() {
         {activeTab === 'audit-schedules' && (
           <AuditScheduleManager />
         )}
+
+        {activeTab === 'seo-queue' && (
+          <SeoQueueManager onClose={() => setActiveTab('crawl')} />
+        )}
       </main>
 
       {showDataViewer && (
@@ -725,7 +736,6 @@ function App() {
       {showWebTree && (
         <WebTree onClose={() => setShowWebTree(false)} />
       )}
-
 
       {showReusePrompt && (
         <div className="modal-overlay" onClick={() => setShowReusePrompt(false)}>

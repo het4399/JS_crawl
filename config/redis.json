@@ -1,0 +1,27 @@
+{
+  "host": "localhost",
+  "port": 6379,
+  "password": null,
+  "db": 0,
+  "retryDelayOnFailover": 100,
+  "maxRetriesPerRequest": 3,
+  "lazyConnect": true,
+  "keyPrefix": "seo:",
+  "queues": {
+    "seo": "seo:queue",
+    "seo-priority": "seo:priority-queue",
+    "seo-processing": "seo:processing",
+    "seo-failed": "seo:failed"
+  },
+  "ttl": {
+    "job": 3600,
+    "processing": 300,
+    "failed": 86400
+  },
+  "redisVersion": "3.0.504",
+  "compatibility": {
+    "useZPOPMIN": false,
+    "useZPOPMAX": false,
+    "useZRANGE_WITHSCORES": true
+  }
+}

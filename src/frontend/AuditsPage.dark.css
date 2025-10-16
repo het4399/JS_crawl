@@ -11,6 +11,15 @@
   border: 1px solid #374151;
 }
 
+.audits-dark .audits-filter {
+  background: #0b1220;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  padding: 8px 12px;
+  border-radius: 8px;
+  min-width: 260px;
+}
+
 .audits-dark .btn {
   background: #2563eb;
   color: #fff;

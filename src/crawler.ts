@@ -7,6 +7,7 @@ import { SitemapService } from './sitemap/SitemapService.js';
 import { initAuditEnqueue, maybeEnqueueAudit } from './audits/enqueue.js';
 import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
 import { extractLinkMetadata } from './utils/linkAnalyzer.js';
+import { initSeoEnqueue, maybeEnqueueSeo } from './seo/redis-queue.js';
 
 /**
  * Check if a URL is a valid HTTP/HTTPS link that should be processed
@@ -85,6 +86,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     onLog?.(startMsg);
         // Initialize audits enqueue with the crawl's origin
         try { initAuditEnqueue(start.href); } catch {}
+        
+        // Initialize SEO enqueue with the crawl's origin
+        try { await initSeoEnqueue(start.href); } catch {}
     } catch (error) {
         const errorMsg = `Invalid start URL: ${startUrl}`;
         logger.error(errorMsg, error as Error);
@@ -278,6 +282,9 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             onPage?.(url);
             // Enqueue for audits if eligible (non-blocking)
             try { maybeEnqueueAudit(url, resolvedContentType); } catch {}
+            
+            // Enqueue for SEO extraction if eligible (non-blocking)
+            try { await maybeEnqueueSeo(url, resolvedContentType, wordCount); } catch {}
             
             // Record successful request in metrics
             if (metricsCollector) {

@@ -44,6 +44,7 @@ export default function AuditsPage() {
   const [items, setItems] = useState<AuditItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('');
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams();
@@ -74,13 +75,20 @@ export default function AuditsPage() {
 
   return (
     <div className="panel audits-dark">
-      <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>📈 Audits</h3>
         <select value={device} onChange={(e) => setDevice(e.target.value as any)} className="select">
           <option value="mobile">Mobile</option>
           <option value="desktop">Desktop</option>
           <option value="all">All</option>
         </select>
+        <input
+          className="audits-filter"
+          type="text"
+          placeholder="Filter URLs (e.g., example.com)"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
         <button className="btn" onClick={load} disabled={loading}>{loading ? '⏳ Refreshing' : '🔄 Refresh'}</button>
         {error && <span className="chip warn">{error}</span>}
       </div>
@@ -105,7 +113,17 @@ export default function AuditsPage() {
           <tbody>
             {items.length === 0 ? (
               <tr><td colSpan={11} style={{ textAlign: 'center', padding: 16 }}>{loading ? 'Loading…' : 'No audits yet'}</td></tr>
-            ) : items.map((it) => {
+            ) : items
+              .filter((it) => {
+                if (!filter.trim()) return true;
+                try {
+                  const u = new URL(it.url);
+                  return u.hostname.includes(filter.trim()) || it.url.includes(filter.trim());
+                } catch {
+                  return it.url.includes(filter.trim());
+                }
+              })
+              .map((it) => {
               const status = statusFromVitals(it.LCP_ms, it.TBT_ms, it.CLS);
               return (
                 <tr key={it.id}>

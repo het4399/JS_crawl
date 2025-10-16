@@ -7,6 +7,7 @@ import { runCrawl, cancelAudits, resetAuditCancellation } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { auditsRoutes } from './routes/audits.routes.js';
 import seoRoutes from './routes/seo.routes.js';
+import seoRedisQueueRoutes from './routes/seo-redis-queue.routes.js';
 import linksRoutes from './routes/links.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
@@ -38,6 +39,7 @@ app.use(express.static(distFrontendPath));
 app.use('/api', monitoringRoutes);
 app.use('/api', auditsRoutes);
 app.use(seoRoutes);
+app.use(seoRedisQueueRoutes);
 app.use(linksRoutes);
 
 // Cancel audits endpoint - moved before static file serving

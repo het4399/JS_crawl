@@ -1,0 +1,14 @@
+{
+  "concurrency": 6,
+  "timeoutMs": 30000,
+  "retries": 2,
+  "backoffBaseMs": 1000,
+  "pythonApiBase": "http://localhost:8000",
+  "urlEligibility": {
+    "httpsOnly": true,
+    "sameOriginOnly": true,
+    "contentTypeAllow": ["text/html"],
+    "minWordCount": 100,
+    "maxWordCount": 10000
+  }
+}
