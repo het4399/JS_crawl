@@ -132,6 +132,12 @@ export default function WebTree({ onClose }: WebTreeProps) {
   // Per-URL SEO summary to attach on tree nodes
   const [seoByUrl, setSeoByUrl] = useState<Map<string, { parentText?: string; topKeywords?: string[] }>>(new Map());
 
+  // Force tree re-render when SEO data changes or when SEO is toggled
+  const [seoUpdateKey, setSeoUpdateKey] = useState(0);
+  useEffect(() => {
+    setSeoUpdateKey(prev => prev + 1);
+  }, [seoByUrl, seoEnabled]);
+
   // Compute full URL from breadcrumb (first element is root URL, subsequent are path segments)
   const computeSelectedUrl = useCallback((): string | null => {
     if (!breadcrumb || breadcrumb.length === 0) return null;
@@ -148,47 +154,7 @@ export default function WebTree({ onClose }: WebTreeProps) {
     }
   }, [breadcrumb]);
 
-  // Trigger SEO extraction when enabled and selection changes
-  useEffect(() => {
-    const run = async () => {
-      if (!seoEnabled) return;
-      const url = computeSelectedUrl();
-      if (!url) return;
-      setSeoLoading(true);
-      setSeoError(null);
-      setSeoResult(null);
-      try {
-        const res = await fetch('/api/seo/extract', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error((data && (data.error || data.detail || JSON.stringify(data))) || 'Extraction failed');
-        }
-        setSeoResult({
-          parent: data.parent ? { text: data.parent.text, score: data.parent.score, intent: data.parent.intent } : null,
-          keywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 30) : [],
-          language: data.language,
-        });
-        // Attach to map for selected node
-        setSeoByUrl(prev => {
-          const next = new Map(prev);
-          next.set(normalizeUrl(url), {
-            parentText: data.parent?.text,
-            topKeywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 10).map((k: any) => k.text) : [],
-          });
-          return next;
-        });
-      } catch (e) {
-        setSeoError(e instanceof Error ? e.message : 'Extraction failed');
-      } finally {
-        setSeoLoading(false);
-      }
-    };
-    void run();
-  }, [breadcrumb, seoEnabled, computeSelectedUrl]);
+  // Removed: No API calls on node click - SEO keywords are only shown from cache via batch loading
 
   function computeTreeStats(root: D3TreeNode | null): { maxDepth: number; levelCounts: number[] } {
     if (!root) return { maxDepth: 0, levelCounts: [] };
@@ -512,7 +478,8 @@ export default function WebTree({ onClose }: WebTreeProps) {
 
       // Build a separate main keyword node as direct child of the URL node
       let childrenWithSeo: TidyTreeNode[] = [...baseChildren];
-      if (seo && seo.parentText) {
+      // Only attach SEO keywords if seoEnabled is true
+      if (seoEnabled && seo && seo.parentText) {
         const keywordChildren: TidyTreeNode[] = (seo.topKeywords || []).slice(0, 8).map((kw) => ({
           text: `• ${kw}`,
         }));
@@ -598,7 +565,7 @@ export default function WebTree({ onClose }: WebTreeProps) {
               dx={siblingSeparation * 24}
               dy={nonSiblingSeparation * 160}
               onSelectPath={setBreadcrumb}
-              recenterKey={recenterKey}
+              recenterKey={recenterKey + seoUpdateKey}
             />
           ) : (
             <div style={{ padding: 16, color: '#555' }}>Configure options and click "Build Tree".</div>

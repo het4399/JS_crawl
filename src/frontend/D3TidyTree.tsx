@@ -11,9 +11,10 @@ interface D3TidyTreeProps {
   dy?: number; // horizontal spacing between nodes
   onSelectPath?: (path: string[]) => void;
   recenterKey?: number; // change to force recentring
+  expandAll?: boolean; // if true, expand all nodes
 }
 
-export default function D3TidyTree({ data, height = 600, orientation = 'horizontal', dx: dxProp, dy: dyProp, onSelectPath, recenterKey }: D3TidyTreeProps) {
+export default function D3TidyTree({ data, height = 600, orientation = 'horizontal', dx: dxProp, dy: dyProp, onSelectPath, recenterKey, expandAll = false }: D3TidyTreeProps) {
   const ref = useRef<SVGSVGElement | null>(null);
   const didCenterRef = useRef<boolean>(false);
   const currentTransformRef = useRef<d3.ZoomTransform | null>(null);
@@ -36,18 +37,19 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
     // Avoid rebuilding the tree when the parent recreates the same data by reference.
     // Serialize only necessary fields for a stable hash.
     const dataHash = JSON.stringify(data);
-    const snapshot = { dataHash, height, orientation, dx: dxProp, dy: dyProp, recenterKey };
+    const snapshot = { dataHash, height, orientation, dx: dxProp, dy: dyProp, recenterKey, expandAll };
     if (prevSnapshotRef.current
-      && prevSnapshotRef.current.dataHash === snapshot.dataHash
-      && prevSnapshotRef.current.height === snapshot.height
-      && prevSnapshotRef.current.orientation === snapshot.orientation
-      && prevSnapshotRef.current.dx === snapshot.dx
-      && prevSnapshotRef.current.dy === snapshot.dy
-      && prevSnapshotRef.current.recenterKey === snapshot.recenterKey) {
+      && prevSnapshotRef.current.dataHash === (snapshot as any).dataHash
+      && prevSnapshotRef.current.height === (snapshot as any).height
+      && prevSnapshotRef.current.orientation === (snapshot as any).orientation
+      && prevSnapshotRef.current.dx === (snapshot as any).dx
+      && prevSnapshotRef.current.dy === (snapshot as any).dy
+      && prevSnapshotRef.current.recenterKey === (snapshot as any).recenterKey
+      && (prevSnapshotRef.current as any).expandAll === expandAll) {
       // Nothing material changed; skip rebuild to prevent jitter
       return;
     }
-    prevSnapshotRef.current = snapshot;
+    prevSnapshotRef.current = snapshot as any;
 
     const root = d3.hierarchy<TreeNode>(data, d => d.children);
 
@@ -81,16 +83,23 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
     (root as any).descendants().forEach((d: any) => {
       d._children = d._children || d.children;
       const key = d.data.__key;
-      const state = collapsedByKeyRef.current.get(key);
-      if (state === true) {
-        d.children = null; // explicitly collapsed
-      } else if (state === false) {
-        d.children = d._children; // explicitly expanded
+      
+      // If expandAll is true, force all nodes to be expanded
+      if (expandAll) {
+        d.children = d._children;
+        collapsedByKeyRef.current.set(key, false);
       } else {
-        // No stored state; default by depth to avoid expanding whole tree and flicker
-        d.children = d.depth > 1 ? null : d._children;
-        // Seed the map so subsequent renders are stable
-        collapsedByKeyRef.current.set(key, d.depth > 1);
+        const state = collapsedByKeyRef.current.get(key);
+        if (state === true) {
+          d.children = null; // explicitly collapsed
+        } else if (state === false) {
+          d.children = d._children; // explicitly expanded
+        } else {
+          // No stored state; default by depth to avoid expanding whole tree and flicker
+          d.children = d.depth > 1 ? null : d._children;
+          // Seed the map so subsequent renders are stable
+          collapsedByKeyRef.current.set(key, d.depth > 1);
+        }
       }
     });
 

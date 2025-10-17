@@ -103,47 +103,7 @@ export default function WebTree({ onClose }: WebTreeProps) {
     }
   }, [breadcrumb]);
 
-  // Trigger SEO extraction when enabled and selection changes
-  useEffect(() => {
-    const run = async () => {
-      if (!seoEnabled) return;
-      const url = computeSelectedUrl();
-      if (!url) return;
-      setSeoLoading(true);
-      setSeoError(null);
-      setSeoResult(null);
-      try {
-        const res = await fetch('/api/seo/extract', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error((data && (data.error || data.detail || JSON.stringify(data))) || 'Extraction failed');
-        }
-        setSeoResult({
-          parent: data.parent ? { text: data.parent.text, score: data.parent.score, intent: data.parent.intent } : null,
-          keywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 30) : [],
-          language: data.language,
-        });
-        // Attach to map for selected node
-        setSeoByUrl(prev => {
-          const next = new Map(prev);
-          next.set(normalizeUrl(url), {
-            parentText: data.parent?.text,
-            topKeywords: Array.isArray(data.keywords) ? data.keywords.slice(0, 10).map((k: any) => k.text) : []
-          });
-          return next;
-        });
-      } catch (e) {
-        setSeoError(e instanceof Error ? e.message : 'Extraction failed');
-      } finally {
-        setSeoLoading(false);
-      }
-    };
-    void run();
-  }, [breadcrumb, seoEnabled, computeSelectedUrl]);
+  // Removed: No API calls on node click - SEO keywords are only shown from cache via batch loading
 
   // Load sessions on mount
   useEffect(() => {
@@ -226,6 +186,12 @@ export default function WebTree({ onClose }: WebTreeProps) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
           });
+          
+          // Skip 404 silently (no cached data available for this URL)
+          if (res.status === 404) {
+            return;
+          }
+          
           const data = await res.json().catch(() => ({} as any));
           if (res.ok && data) {
             // Update state immediately for each successful extraction
@@ -406,11 +372,11 @@ export default function WebTree({ onClose }: WebTreeProps) {
     return { width, height };
   }, [containerRef.current]);
 
-  // Force tree re-render when SEO data changes
+  // Force tree re-render when SEO data changes or when SEO is toggled
   const [seoUpdateKey, setSeoUpdateKey] = useState(0);
   useEffect(() => {
     setSeoUpdateKey(prev => prev + 1);
-  }, [seoByUrl]);
+  }, [seoByUrl, seoEnabled]);
 
   function convertToTidy(root: D3TreeNode | null): TidyTreeNode | null {
     if (!root) return null;
@@ -422,7 +388,8 @@ export default function WebTree({ onClose }: WebTreeProps) {
 
       // Build a separate main keyword node as direct child of the URL node
       let childrenWithSeo: TidyTreeNode[] = [...baseChildren];
-      if (seo && seo.parentText) {
+      // Only attach SEO keywords if seoEnabled is true
+      if (seoEnabled && seo && seo.parentText) {
         // Attach SEO nodes without visual prefixes; mark internal types for keying
         const keywordChildren: TidyTreeNode[] = (seo.topKeywords || []).slice(0, 8).map((kw) => ({
           text: kw,
@@ -602,7 +569,7 @@ export default function WebTree({ onClose }: WebTreeProps) {
                 dx={siblingSeparation * 24}
                 dy={nonSiblingSeparation * 160}
                 onSelectPath={setBreadcrumb}
-                recenterKey={recenterKey}
+                recenterKey={recenterKey + seoUpdateKey}
               />
             );
           })()}
