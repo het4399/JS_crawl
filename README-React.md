@@ -1,6 +1,6 @@
-# React Web Crawler Frontend
+# AEO Analyzer - React Frontend
 
-This project now has a React frontend alongside the existing Node.js backend.
+A modern React-based Answer Engine Optimization (AEO) analyzer with web crawler integration and comprehensive SEO analysis tools.
 
 ## 🚀 Quick Start
 
@@ -26,34 +26,83 @@ npm run dev:frontend
 
 ```
 ├── src/
-│   ├── frontend/          # React frontend
-│   │   ├── App.tsx       # Main React component
-│   │   ├── App.css       # Styles
-│   │   └── main.tsx      # React entry point
-│   ├── crawler.ts        # Backend crawler logic
-│   ├── server.ts         # Express server
+│   ├── frontend/                    # React frontend
+│   │   ├── components/              # Organized components
+│   │   │   ├── audit/              # Audit-related components
+│   │   │   │   ├── AuditScheduleManager.tsx
+│   │   │   │   └── AuditsPage.tsx
+│   │   │   ├── crawler/            # Crawler & analysis components
+│   │   │   │   ├── DataViewer.tsx
+│   │   │   │   ├── LinkExplorer.tsx
+│   │   │   │   ├── WebTree.tsx
+│   │   │   │   ├── FixedWebTree.tsx
+│   │   │   │   ├── D3TidyTree.tsx
+│   │   │   │   └── ResultsDisplay.tsx
+│   │   │   ├── scheduler/          # Scheduling components
+│   │   │   │   ├── ScheduleForm.tsx
+│   │   │   │   ├── ScheduleList.tsx
+│   │   │   │   └── CronHistory.tsx
+│   │   │   └── seo/                # SEO components
+│   │   │       └── SeoQueueManager.tsx
+│   │   ├── App.tsx                 # Main application component
+│   │   ├── App.css                 # Global styles
+│   │   ├── main.tsx                # React entry point
+│   │   ├── api.ts                  # API service layer
+│   │   └── index.css               # Base styles
+│   ├── routes/                     # Backend API routes
+│   │   ├── aeo.routes.ts          # AEO analysis endpoints
+│   │   ├── seo.routes.ts          # SEO endpoints
+│   │   ├── audits.routes.ts       # Audit endpoints
+│   │   └── ...
+│   ├── crawler.ts                  # Web crawler logic
+│   ├── server.ts                   # Express server
+│   ├── database/                   # Database services
+│   ├── scheduler/                  # Scheduling services
 │   └── ...
-├── public/               # Old HTML files (can be removed)
-├── index.html           # React app template
-├── vite.config.ts       # Vite configuration
+├── aeo-api/                        # Python AEO API service
+│   ├── app/
+│   │   ├── services/              # AEO analysis services
+│   │   └── routes/                # Python API routes
+│   └── ...
+├── docs/                           # Documentation & data files
+├── config/                         # Configuration files
+├── index.html                      # React app template
+├── vite.config.ts                 # Vite configuration
 └── package.json
 ```
 
 ## 🎯 Features
 
-### React Frontend
-- ✅ **Modern UI** with React hooks
-- ✅ **Real-time updates** via Server-Sent Events
-- ✅ **Resume functionality** with queue management
-- ✅ **Export capabilities** (JSON, CSV, TXT, XML)
-- ✅ **Queue status checking**
-- ✅ **Responsive design**
+### AEO Analysis
+- ✅ **AI Presence Detection** - Identifies AI-generated content
+- ✅ **Answerability Score** - Measures content quality for AI responses
+- ✅ **Competitor Analysis** - Analyzes competing content
+- ✅ **Crawler Accessibility** - Checks if content is crawlable
+- ✅ **Knowledge Base Integration** - Enhances AI understanding
 
-### Backend (Unchanged)
-- ✅ **Crawlee crawlers** (Cheerio + Playwright)
-- ✅ **Express API** with monitoring
-- ✅ **Server-Sent Events** for real-time updates
-- ✅ **Resume functionality** with queue preservation
+### Web Crawler
+- ✅ **Site-wide crawling** with Crawlee (Cheerio + Playwright)
+- ✅ **Real-time monitoring** via Server-Sent Events
+- ✅ **Link analysis** and visualization (tree/graph views)
+- ✅ **Performance audits** via PageSpeed Insights
+- ✅ **SEO analysis** and data extraction
+
+### Frontend Features
+- ✅ **Modern React UI** with organized component structure
+- ✅ **Real-time updates** and progress tracking
+- ✅ **Data visualization** (DataViewer, WebTree, LinkExplorer)
+- ✅ **Scheduling system** with cron support
+- ✅ **Audit management** for performance testing
+- ✅ **SEO queue management** with Redis integration
+- ✅ **Export capabilities** (JSON, CSV, TXT, XML)
+
+### Backend Services
+- ✅ **Node.js + TypeScript** backend with Express
+- ✅ **Python AEO API** for AI-powered analysis
+- ✅ **Redis queue** for background processing
+- ✅ **SQLite database** for data persistence
+- ✅ **Scheduler service** for automated tasks
+- ✅ **Monitoring & health checks**
 
 ## 🔧 Development
 
@@ -80,11 +129,38 @@ npm run build:frontend
 
 - **React Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:3004
-- **Monitoring**: http://localhost:3004/monitoring.html (old UI)
 
-## 🔄 Migration Notes
+## 🏗️ Architecture
 
-- Old HTML files in `public/` can be removed
-- React app replaces the old `index.html`
-- All backend functionality remains unchanged
-- API endpoints are the same
+### Frontend (React + Vite)
+- **Port 3000** during development
+- Hot module replacement for fast development
+- TypeScript for type safety
+- Organized component structure by feature
+
+### Node.js Backend (Express)
+- **Port 3004** 
+- RESTful API endpoints
+- Server-Sent Events for real-time updates
+- Scheduler for automated crawls/audits
+
+### Python AEO API
+- **Port 8000**
+- FastAPI framework
+- AI-powered content analysis
+- Integration with LLM providers
+
+### Data Layer
+- **SQLite** for crawler data
+- **Redis** for queue management
+- **File system** for audit results
+
+## 🔄 Recent Changes
+
+- ✅ Removed old HTML static pages (public/ folder)
+- ✅ Consolidated to single React app (AEO Analyzer)
+- ✅ Organized components into feature-based directories
+- ✅ Cleaned up root directory structure
+- ✅ Updated build configuration for single entry point
+- ✅ Removed unnecessary files (old README, test data, stale builds)
+- ✅ Cleaned dist/ folder for fresh builds

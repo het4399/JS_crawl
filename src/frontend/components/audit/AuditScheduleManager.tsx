@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './AuditScheduleManager.css';
-import './ScheduleList.css';
+import '../scheduler/ScheduleList.css';
 
 interface AuditSchedule {
   id: number;

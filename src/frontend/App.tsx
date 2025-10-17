@@ -1,49 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
+import './index.css';
 import './App.css';
-import DataViewer from './DataViewer';
-import AuditsPage from './AuditsPage';
-import ScheduleList from './ScheduleList';
-import CronHistory from './CronHistory';
-import AuditScheduleManager from './AuditScheduleManager';
-import LinkExplorer from './LinkExplorer';
-import WebTree from './WebTree';
-import SeoQueueManager from './SeoQueueManager';
-
-interface CrawlData {
-  url: string;
-  title: string;
-  description: string;
-  contentType: string;
-  lastModified: string | null;
-  statusCode: number;
-  responseTime: number;
-  timestamp: string;
-  success: boolean;
-  resourceType?: string;
-}
+import ResultsDisplay from './components/crawler/ResultsDisplay';
+import DataViewer from './components/crawler/DataViewer';
+import LinkExplorer from './components/crawler/LinkExplorer';
+import WebTree from './components/crawler/FixedWebTree';
+import ScheduleList from './components/scheduler/ScheduleList';
+import AuditsPage from './components/audit/AuditsPage';
+import SeoQueueManager from './components/seo/SeoQueueManager';
+import { apiService, AnalysisResult } from './api';
 
 
-function App() {
-  const [url, setUrl] = useState('');
-  const [allowSubdomains, setAllowSubdomains] = useState(true);
-  const [runAudits, setRunAudits] = useState(false);
+const App: React.FC = () => {
+  const [url, setUrl] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [runCrawl, setRunCrawl] = useState<boolean>(false);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+  
+  // Crawler settings (matching the actual crawler)
+  const [allowSubdomains, setAllowSubdomains] = useState<boolean>(true);
+  const [runAudits, setRunAudits] = useState<boolean>(false);
   const [auditDevice, setAuditDevice] = useState<'mobile' | 'desktop'>('desktop');
-  const [captureLinkDetails, setCaptureLinkDetails] = useState(false);
-  const [isCrawling, setIsCrawling] = useState(false);
-  const [isAuditing, setIsAuditing] = useState(false);
-  const [pageCount, setPageCount] = useState(0);
+  const [captureLinkDetails, setCaptureLinkDetails] = useState<boolean>(false);
+  
+  // Live crawling state
+  const [isCrawling, setIsCrawling] = useState<boolean>(false);
+  const [pageCount, setPageCount] = useState<number>(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
-  const [showDataViewer, setShowDataViewer] = useState(false);
-  const [showLinkExplorer, setShowLinkExplorer] = useState(false);
-  const [showWebTree, setShowWebTree] = useState(false);
-  const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'crawl' | 'schedules' | 'history' | 'audits' | 'audit-schedules' | 'seo-queue'>('crawl');
   const [crawlStats, setCrawlStats] = useState<{
     count: number;
     duration: number;
     pagesPerSecond: number;
   } | null>(null);
+
+  // Analysis tools state
+  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules' | 'audits' | 'seo-queue'>('metrics');
+  const [showDataViewer, setShowDataViewer] = useState(false);
+  const [showLinkExplorer, setShowLinkExplorer] = useState(false);
+  const [showWebTree, setShowWebTree] = useState(false);
+  const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
+
+  // Audit results state
   const [auditResults, setAuditResults] = useState<any[]>([]);
   const [auditStats, setAuditStats] = useState<{
     total: number;
@@ -56,8 +56,18 @@ function App() {
     averagePerformanceScore: number;
   } | null>(null);
 
-  // Timeout reference for audit fallback
-  const auditTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Formatting helpers for audit table
+  function formatMs(value?: number): string {
+    if (value == null || !Number.isFinite(value)) return '-';
+    return `${Math.round(value)}ms`;
+  }
+
+  function formatScore(value?: number): string {
+    if (value == null || !Number.isFinite(value)) return '-';
+    return `${Math.round(value)}/100`;
+  }
+
+  // Reuse prompt state (like original crawler)
   const [showReusePrompt, setShowReusePrompt] = useState(false);
   const [recentStatus, setRecentStatus] = useState<null | {
     running: { id: number; startedAt: string } | null;
@@ -67,8 +77,35 @@ function App() {
 
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Check for recent crawl status (like original crawler)
+  const checkAndMaybePrompt = async () => {
+    if (!url.trim() || isCrawling) return;
+    try {
+      const res = await fetch(`/api/crawl/status?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        await handleSubmit();
+        return;
+      }
+      const data = await res.json();
+      const latest = data.latest as any;
+      const running = data.running as any;
+      const avg = data.averageDurationSec as number | null;
+      const now = Date.now();
+      const completedAt = latest?.completedAt || latest?.completed_at;
+      const recent = completedAt ? (now - new Date(completedAt).getTime()) <= 30 * 60 * 1000 : false;
+      if (running || recent) {
+        setRecentStatus({ running, latest, averageDurationSec: avg });
+        setShowReusePrompt(true);
+      } else {
+        await handleSubmit();
+      }
+    } catch {
+      await handleSubmit();
+    }
+  };
+
+  // Set up Server-Sent Events for live crawling data
   useEffect(() => {
-    // Connect to Server-Sent Events
     const eventSource = new EventSource('/events');
     eventSourceRef.current = eventSource;
 
@@ -84,647 +121,479 @@ function App() {
     });
 
     eventSource.addEventListener('done', (e) => {
-      console.log('Raw event data:', e.data);
       const data = JSON.parse(e.data);
-      console.log('Parsed event data:', data);
-      console.log('Data keys:', Object.keys(data));
-      console.log('Data values:', Object.values(data));
-
       const duration = data.duration || 0;
       const pagesPerSecond = data.pagesPerSecond || 0;
-
-      console.log('Final values:', { count: data.count, duration, pagesPerSecond });
 
       setCrawlStats({
         count: data.count,
         duration: duration,
         pagesPerSecond: pagesPerSecond
       });
-      setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
-      
-      // Update recentStatus to enable Link Explorer
-      // Use a dummy sessionId if none is provided
-      const sessionId = data.sessionId || data.id || Date.now();
-      setRecentStatus({
-        running: null,
-        latest: {
-          id: sessionId,
-          status: 'completed',
-          startedAt: data.startedAt || new Date().toISOString(),
-          completedAt: new Date().toISOString(),
-          totalPages: data.count || 0,
-          totalResources: data.resources || 0,
-          duration: duration
-        },
-        averageDurationSec: null
-      });
-      
-      // If audits are not enabled, we're done immediately
-      if (!runAudits) {
-        console.log('Crawl done without audits - setting states to false');
-        setIsCrawling(false);
-        setIsAuditing(false);
-        if (auditTimeoutRef.current) {
-          clearTimeout(auditTimeoutRef.current);
-        }
-      }
-      // If audits are enabled, let audit events handle the state transition
-    });
-
-    eventSource.addEventListener('audit-start', (e) => {
-      const data = JSON.parse(e.data);
-      setLogs(prev => [...prev.slice(-99), `🔍 Starting audit for ${data.url}`]);
-      setIsAuditing(true);
-      // Keep crawling state true during audits
-      setIsCrawling(true);
-    });
-
-    eventSource.addEventListener('audit-complete', (e) => {
-      const data = JSON.parse(e.data);
-      if (data.success) {
-        setLogs(prev => [...prev.slice(-99), `✓ Audit completed for ${data.url} - LCP: ${data.lcp ? Math.round(data.lcp) + 'ms' : 'N/A'}, TBT: ${data.tbt ? Math.round(data.tbt) + 'ms' : 'N/A'}, CLS: ${data.cls ? data.cls.toFixed(3) : 'N/A'}`]);
-      } else {
-        setLogs(prev => [...prev.slice(-99), `✗ Audit failed for ${data.url}`]);
-      }
-    });
-
-    eventSource.addEventListener('audit-results', (e) => {
-      console.log('Received audit-results event:', e.data);
-      const data = JSON.parse(e.data);
-      setAuditResults(data.results);
-      
-      // Calculate audit stats
-      const results = data.results;
-      const successful = results.filter((r: any) => r.success);
-      const successRate = results.length > 0 ? (successful.length / results.length) * 100 : 0;
-      
-      const averageLcp = successful.length > 0 && successful.some((r: any) => r.lcp)
-        ? successful.reduce((sum: number, r: any) => sum + (r.lcp || 0), 0) / successful.filter((r: any) => r.lcp).length
-        : 0;
-        
-      const averageTbt = successful.length > 0 && successful.some((r: any) => r.tbt)
-        ? successful.reduce((sum: number, r: any) => sum + (r.tbt || 0), 0) / successful.filter((r: any) => r.tbt).length
-        : 0;
-        
-      const averageCls = successful.length > 0 && successful.some((r: any) => r.cls)
-        ? successful.reduce((sum: number, r: any) => sum + (r.cls || 0), 0) / successful.filter((r: any) => r.cls).length
-        : 0;
-        
-      const averagePerformanceScore = successful.length > 0 && successful.some((r: any) => r.performanceScore)
-        ? Math.round(successful.reduce((sum: number, r: any) => sum + (r.performanceScore || 0), 0) / successful.filter((r: any) => r.performanceScore).length)
-        : 0;
-
-      setAuditStats({
-        total: results.length,
-        successful: successful.length,
-        failed: results.length - successful.length,
-        successRate,
-        averageLcp,
-        averageTbt,
-        averageCls,
-        averagePerformanceScore
-      });
-      
-      // Update recentStatus to enable Link Explorer
-      // Use a dummy sessionId if none is provided
-      const sessionId = data.sessionId || data.id || Date.now();
-      setRecentStatus({
-        running: null,
-        latest: {
-          id: sessionId,
-          status: 'completed',
-          startedAt: data.startedAt || new Date().toISOString(),
-          completedAt: new Date().toISOString(),
-          totalPages: data.totalPages || 0,
-          totalResources: data.totalResources || 0,
-          duration: data.duration || 0
-        },
-        averageDurationSec: null
-      });
-      
-      // Audits are complete, so both crawling and auditing are done
-      console.log('Setting states to false - audits complete');
       setIsCrawling(false);
-      setIsAuditing(false);
-      if (auditTimeoutRef.current) {
-        clearTimeout(auditTimeoutRef.current);
-      }
+      setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count} | Duration: ${duration}s | Speed: ${pagesPerSecond} pages/sec`]);
     });
 
-    // Handle case where audits are enabled but no URLs found for auditing
-    eventSource.addEventListener('log', (e) => {
+    // Handle audit events
+    eventSource.addEventListener('audit_progress', (e) => {
       const data = JSON.parse(e.data);
-      if (data.message && data.message.includes('No valid URLs found for auditing')) {
-        // No URLs to audit, so we're done
-        setIsCrawling(false);
-        setIsAuditing(false);
-        if (auditTimeoutRef.current) {
-          clearTimeout(auditTimeoutRef.current);
-        }
-      }
-      // Check if audits are starting
-      if (data.message && data.message.includes('Starting performance audits for all')) {
-        setIsAuditing(true);
-        setIsCrawling(true);
-      }
-      // Check if audits are complete based on final summary messages
-      if (data.message && (data.message.includes('📊 Audit Results:') || data.message.includes('📈 Average LCP:') || data.message.includes('📈 Average TBT:') || data.message.includes('📈 Average CLS:'))) {
-        console.log('Detected audit completion from log message:', data.message);
-        // Add a small delay to ensure all audit events are processed
-        setTimeout(() => {
-          console.log('Setting states to false - audits complete (from log detection)');
-          setIsCrawling(false);
-          setIsAuditing(false);
-          if (auditTimeoutRef.current) {
-            clearTimeout(auditTimeoutRef.current);
-          }
-        }, 1000);
-      }
+      setAuditResults(data.audits || []);
+      setAuditStats(data.stats || null);
     });
 
-    // Fallback timeout to handle cases where audit events might not be received
-    auditTimeoutRef.current = setTimeout(() => {
-      if (isCrawling && !isAuditing) {
-        // If we're still in crawling state but no audit events received after 30 seconds
-        // assume audits are not running and reset state
-        console.log('Audit timeout - resetting state');
-        setIsCrawling(false);
-        setIsAuditing(false);
-      }
-    }, 30000); // 30 second timeout
+    eventSource.addEventListener('audit_done', (e) => {
+      const data = JSON.parse(e.data);
+      setAuditResults(data.audits || []);
+      setAuditStats(data.stats || null);
+    });
+
+    eventSource.addEventListener('error', (e) => {
+      console.error('EventSource failed:', e);
+      eventSource.close();
+      setIsCrawling(false);
+      setLogs(prev => [...prev, 'Error: Connection to server lost or failed.']);
+    });
 
     return () => {
       eventSource.close();
-      if (auditTimeoutRef.current) {
-        clearTimeout(auditTimeoutRef.current);
-      }
     };
   }, []);
 
-  const cancelAuditProcess = async () => {
-    try {
-      console.log('Sending cancel request...');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      // Try both endpoints
-      let response;
-      try {
-        response = await fetch('/api/cancel-audits', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal
-        });
-      } catch (error) {
-        console.log('First endpoint failed, trying API endpoint...');
-        response = await fetch('/api/cancel-audits', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal
-        });
-      }
-      
-      clearTimeout(timeoutId);
-      
-      console.log('Cancel response status:', response.status);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Cancel response data:', data);
-        setLogs(prev => [...prev, '🛑 Audit cancellation requested...']);
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Cancel failed:', errorData);
-        setLogs(prev => [...prev, `❌ Failed to cancel audits: ${errorData.error || 'Unknown error'}`]);
-      }
-    } catch (error) {
-      console.error('Cancel request error:', error);
-      setLogs(prev => [...prev, `❌ Error cancelling audits: ${(error as Error).message}`]);
-    }
-  };
-
-  const startCrawl = async () => {
-    if (!url.trim()) {
-      setLogs(prev => [...prev, '❌ Please enter a URL to crawl']);
-      return;
-    }
-
-    try {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!url.trim()) return;
+    
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    
+    // Reset crawling state
+    if (runCrawl) {
       setIsCrawling(true);
-      setIsAuditing(false);
       setPageCount(0);
       setLogs([]);
       setPages([]);
-
-      const response = await fetch('/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          url, 
-          allowSubdomains: true, 
+      setCrawlStats(null);
+    }
+    
+    console.log('Starting AEO analysis for URL:', url);
+    console.log('Run crawl enabled:', runCrawl);
+    if (runCrawl) {
+      console.log('Crawler settings:', {
+        allowSubdomains,
           runAudits,
           auditDevice,
           captureLinkDetails
-        })
       });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
+    }
+    
+    try {
+      let analysisResult;
+      
+      if (runCrawl) {
+        // Call crawler with options
+        analysisResult = await apiService.analyzeUrl(url.trim(), {
+          allowSubdomains,
+          runAudits,
+          auditDevice,
+          captureLinkDetails
+        });
+      } else {
+        // Call AEO analyzer for single page
+        analysisResult = await apiService.analyzeUrl(url.trim());
       }
-
-      setLogs(prev => [...prev, `🚀 Starting crawl of ${url}`]);
-    } catch (error) {
-      setLogs(prev => [...prev, `❌ Error: ${(error as Error).message}`]);
+      
+      console.log('Analysis completed:', analysisResult);
+      setResult(analysisResult);
+    } catch (err: any) {
+      console.error('Analysis error:', err);
+      setError(err.message || 'Failed to analyze URL');
+    } finally {
+      setLoading(false);
       setIsCrawling(false);
     }
   };
 
-  // Intercept manual start to check for recent results
-  const checkAndMaybePrompt = async () => {
-    if (!url.trim() || isCrawling) return;
-    try {
-      const res = await fetch(`/api/crawl/status?url=${encodeURIComponent(url)}`);
-      if (!res.ok) {
-        await startCrawl();
-        return;
-      }
-      const data = await res.json();
-      const latest = data.latest as any;
-      const running = data.running as any;
-      const avg = data.averageDurationSec as number | null;
-      const now = Date.now();
-      const completedAt = latest?.completedAt || latest?.completed_at;
-      const recent = completedAt ? (now - new Date(completedAt).getTime()) <= 30 * 60 * 1000 : false;
-      if (running || recent) {
-        setRecentStatus({ running, latest, averageDurationSec: avg });
-        setShowReusePrompt(true);
-      } else {
-        await startCrawl();
-      }
-    } catch {
-      await startCrawl();
-    }
-  };
-
-  // Resume functionality removed for minimal UI
-
-
   return (
-    <div className="app">
-      <header className="header">
-        <h1>🕷️ Fast Web Crawler</h1>
-        <p>Discover and crawl websites with powerful monitoring and analytics</p>
-        <div className="header-stats">
-          <div className="stat-item">
-            <span className="stat-number">{pageCount}</span>
-            <span className="stat-label">Pages Found</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-number">{logs.length}</span>
-            <span className="stat-label">Log Entries</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-number">{isCrawling ? 'Active' : 'Ready'}</span>
-            <span className="stat-label">Status</span>
+    <div className="min-h-screen bg-black aeo-dark" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '20px 20px' }}>
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-4">
+            AEO Checker
+          </h1>
+          <p className="text-lg text-gray-300 max-w-2xl mx-auto">
+            Analyze your website's structured data and get actionable insights to improve 
+            your search engine visibility and Answer Engine Optimization (AEO).
+          </p>
           </div>
 
-          {crawlStats && !isCrawling && (
-            <>
-              <div className="stat-card">
-                <div className="stat-icon">📊</div>
-                <div className="stat-content">
-                  <div className="stat-value">{crawlStats.count}</div>
-                  <div className="stat-label">Total URLs</div>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon">⏱️</div>
-                <div className="stat-content">
-                  <div className="stat-value">{crawlStats.duration}s</div>
-                  <div className="stat-label">Duration</div>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon">🚀</div>
-                <div className="stat-content">
-                  <div className="stat-value">{crawlStats.pagesPerSecond}</div>
-                  <div className="stat-label">Pages/sec</div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {auditStats && !isCrawling && runAudits && (
-            <>
-              <div className="audit-results-section">
-                <h3>🔍 Performance Audit Results</h3>
-                <div className="audit-stats">
-                  <div className="stat-card">
-                    <div className="stat-icon">📊</div>
-                    <div className="stat-content">
-                      <div className="stat-value">{auditStats.successful}/{auditStats.total}</div>
-                      <div className="stat-label">Audits Completed</div>
-                    </div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">✅</div>
-                    <div className="stat-content">
-                      <div className="stat-value">{auditStats.successRate.toFixed(1)}%</div>
-                      <div className="stat-label">Success Rate</div>
-                    </div>
-                  </div>
-                  {auditStats.averageLcp > 0 && (
-                    <div className="stat-card">
-                      <div className="stat-icon">⚡</div>
-                      <div className="stat-content">
-                        <div className="stat-value">{Math.round(auditStats.averageLcp)}ms</div>
-                        <div className="stat-label">Avg LCP</div>
-                      </div>
-                    </div>
-                  )}
-                  {auditStats.averageTbt > 0 && (
-                    <div className="stat-card">
-                      <div className="stat-icon">🚫</div>
-                      <div className="stat-content">
-                        <div className="stat-value">{Math.round(auditStats.averageTbt)}ms</div>
-                        <div className="stat-label">Avg TBT</div>
-                      </div>
-                    </div>
-                  )}
-                  {auditStats.averageCls > 0 && (
-                    <div className="stat-card">
-                      <div className="stat-icon">📐</div>
-                      <div className="stat-content">
-                        <div className="stat-value">{auditStats.averageCls.toFixed(3)}</div>
-                        <div className="stat-label">Avg CLS</div>
-                      </div>
-                    </div>
-                  )}
-                  {auditStats.averagePerformanceScore > 0 && (
-                    <div className="stat-card performance-score-card">
-                      <div className="stat-icon">🏆</div>
-                      <div className="stat-content">
-                        <div className="stat-value">{auditStats.averagePerformanceScore}/100</div>
-                        <div className="stat-label">Avg Performance Score</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {auditResults.length > 0 && (
-                  <div className="audit-details">
-                    <h4>Detailed Results:</h4>
-                    <div className="audit-results-list">
-                      {auditResults.map((result, index) => (
-                        <div key={index} className={`audit-result-item ${result.success ? 'success' : 'failed'}`}>
-                          <div className="audit-url">{result.url}</div>
-                          {result.success ? (
-                            <div className="audit-metrics">
-                              {result.performanceScore && <span className="performance-score">Score: {result.performanceScore}/100</span>}
-                              {result.lcp && <span>LCP: {Math.round(result.lcp)}ms</span>}
-                              {result.tbt && <span>TBT: {Math.round(result.tbt)}ms</span>}
-                              {result.cls && <span>CLS: {result.cls.toFixed(3)}</span>}
-                            </div>
-                          ) : (
-                            <div className="audit-error">Error: {result.error}</div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-      </header>
-
-      <main className="main">
-        <div className="tab-navigation">
-          <button
-            className={`tab-btn ${activeTab === 'crawl' ? 'active' : ''}`}
-            onClick={() => setActiveTab('crawl')}
-          >
-            🕷️ Manual Crawl
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'schedules' ? 'active' : ''}`}
-            onClick={() => setActiveTab('schedules')}
-          >
-            ⏰ Scheduled Crawls
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-            onClick={() => setActiveTab('history')}
-          >
-            📜 Cron History
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'audits' ? 'active' : ''}`}
-            onClick={() => setActiveTab('audits')}
-          >
-            📈 Audits
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'audit-schedules' ? 'active' : ''}`}
-            onClick={() => setActiveTab('audit-schedules')}
-          >
-            ⏰ Audit Schedules
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'seo-queue' ? 'active' : ''}`}
-            onClick={() => setActiveTab('seo-queue')}
-          >
-            🔍 SEO Queue
-          </button>
-        </div>
-
-        {activeTab === 'crawl' && (
-          <>
-            <div className="controls">
-              <div className="controls-section">
-                <h3>🌐 Website to Crawl</h3>
-              <div className="input-group">
+        {/* Input Form */}
+        <form onSubmit={(e) => { e.preventDefault(); checkAndMaybePrompt(); }} className="max-w-4xl mx-auto mb-8">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex gap-4 mb-4">
+              <div className="flex-1">
                 <input
                   type="url"
-                  placeholder="https://example.com"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  className="url-input"
-                  disabled={isCrawling || isAuditing}
+                  placeholder="Enter website URL (e.g., https://example.com)"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                  required
                 />
                 </div>
-              </div>
+              <button
+                type="submit"
+                disabled={loading || !url.trim()}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <span>🔍</span>
+                )}
+                {loading ? 'Analyzing...' : 'Analyze'}
+              </button>
+                </div>
+                
+            {/* Run Crawl Checkbox */}
+            <div className="flex items-center gap-3 mb-4">
+              <input
+                type="checkbox"
+                id="runCrawl"
+                checked={runCrawl}
+                onChange={(e) => setRunCrawl(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                disabled={loading}
+              />
+              <label htmlFor="runCrawl" className="text-sm font-medium text-gray-700">
+                🕷️ Run Crawl (Analyze multiple pages)
+              </label>
+        </div>
 
-              
+            {/* Analysis Options */}
+            {runCrawl && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">📊 Analysis Options</h3>
+          <button
+                    type="button"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {showAdvanced ? 'Hide' : 'Show'} Advanced Options
+          </button>
+        </div>
 
-              <div className="controls-section">
-                <h3>📊 Analysis Options</h3>
-                <div className="controls-row">
-                  <div className="control-group">
-                    <label>
+                {showAdvanced && (
+                  <div className="space-y-4">
+                    {/* Checkboxes Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex items-center gap-2">
+                <input
+                          type="checkbox"
+                          checked={allowSubdomains}
+                          onChange={(e) => setAllowSubdomains(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          disabled={loading}
+                        />
+                        <span className="text-sm text-gray-700">🌐 Allow Subdomains</span>
+                      </label>
+
+                      <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={runAudits}
                         onChange={(e) => setRunAudits(e.target.checked)}
-                        disabled={isCrawling || isAuditing}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          disabled={loading}
                       />
-                      🔍 Run Performance Audits
+                        <span className="text-sm text-gray-700">🔍 Run Performance Audits</span>
                     </label>
-                  </div>
 
-                  <div className="control-group">
-                    <label>
+                      <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={captureLinkDetails}
                         onChange={(e) => setCaptureLinkDetails(e.target.checked)}
-                        disabled={isCrawling || isAuditing}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          disabled={loading}
                       />
-                      🔗 Link Analysis
+                        <span className="text-sm text-gray-700">🔗 Link Analysis</span>
                     </label>
-                  </div>
                 </div>
 
+                    {/* Audit Device Selection */}
                 {runAudits && (
-                  <div className="controls-row">
-                    <div className="control-group">
-                      <label>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
                         Audit Device:
+                        </label>
                         <select
                           value={auditDevice}
                           onChange={(e) => setAuditDevice(e.target.value as 'mobile' | 'desktop')}
-                          disabled={isCrawling || isAuditing}
+                          className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          disabled={loading}
                         >
                           <option value="desktop">Desktop</option>
                           <option value="mobile">Mobile</option>
                         </select>
-                      </label>
+                      </div>
+                    )}
                     </div>
+                )}
                   </div>
                 )}
               </div>
+        </form>
 
+        {loading && (
+          <div className="text-center">
+            <div className="inline-block w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-300">
+              {runCrawl ? 'Crawling and analyzing website...' : 'Analyzing your website...'}
+            </p>
+          </div>
+        )}
 
-              <button
-                onClick={checkAndMaybePrompt}
-                disabled={isCrawling || isAuditing}
-                className="start-btn"
-              >
-                {isCrawling ? (isAuditing ? '🔍 Auditing...' : '⏳ Crawling...') : '🚀 Start Crawl'}
-              </button>
+        {/* Error Display */}
+        {error && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <div className="bg-red-900 border border-red-700 rounded-lg p-4 flex items-center gap-3">
+              <div className="w-6 h-6 text-red-600 flex-shrink-0">⚠️</div>
+              <div>
+                <h3 className="font-semibold text-red-200">Analysis Failed</h3>
+                <p className="text-red-300">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-              {isAuditing && (
+        {/* Tab Navigation */}
+        {result && (
+          <div className="max-w-7xl mx-auto mb-8">
+            <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+              <div className="flex flex-wrap gap-2 mb-6">
                 <button
-                  onClick={cancelAuditProcess}
-                  className="cancel-btn"
+                  onClick={() => setActiveView('metrics')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'metrics'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
                 >
-                  🛑 Cancel Audits
+                  📊 AEO Metrics
                 </button>
-              )}
+                <button
+                  onClick={() => setActiveView('data')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'data'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  📋 Crawled Data
+                </button>
+                <button
+                  onClick={() => setActiveView('links')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'links'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔗 Link Analysis
+                </button>
+                <button
+                  onClick={() => setActiveView('tree')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'tree'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🌳 Site Structure
+                </button>
+                <button
+                  onClick={() => setActiveView('audits')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'audits'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔍 Performance Audits
+                </button>
+              <button
+                  onClick={() => setActiveView('schedules')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'schedules'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  📅 Schedules
+              </button>
+                <button
+                  onClick={() => setActiveView('seo-queue')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeView === 'seo-queue'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔍 SEO Queue
+                </button>
+              </div>
 
+              {/* Tab Content */}
+              {activeView === 'metrics' && <ResultsDisplay result={result} />}
+              {activeView === 'data' && (
+                <div className="text-center py-8">
               <button
                 onClick={() => setShowDataViewer(true)}
-                className="view-data-btn"
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                📊 View Data
+                    📊 Open Data Viewer
               </button>
-
+                </div>
+              )}
+              {activeView === 'links' && (
+                <div className="text-center py-8">
               <button
-                onClick={() => {
-                  setShowLinkExplorer(true);
-                }}
-                className="link-explorer-btn"
-              >
-                🔗 Link Explorer
+                    onClick={() => setShowLinkExplorer(true)}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    🔗 Open Link Explorer
               </button>
-
+                </div>
+              )}
+              {activeView === 'tree' && (
+                <div className="text-center py-8">
               <button
                 onClick={() => setShowWebTree(true)}
-                className="link-explorer-btn"
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                🌳 Web Tree
+                    🌳 Open Site Structure
               </button>
-
+                </div>
+              )}
+              {activeView === 'schedules' && <ScheduleList />}
+              {activeView === 'audits' && <AuditsPage />}
+              {activeView === 'seo-queue' && (
+                <SeoQueueManager onClose={() => setActiveView('metrics')} />
+              )}
             </div>
+            </div>
+        )}
 
-            {/* Resume UI removed for minimalism */}
+        {/* Audit results now live under the dedicated "Performance Audits" tab */}
 
-
-            <div className="status-bar">
-              <div className="status-indicator">
-                <div className={`status-dot ${isCrawling ? (isAuditing ? 'auditing' : 'crawling') : ''}`}></div>
-                <span>
-                  {isCrawling ? (isAuditing ? 'Running performance audits...' : 'Crawling in progress...') : 'Ready to crawl'}
+        {/* Crawler Section - Below Metrics */}
+        {runCrawl && (isCrawling || pageCount > 0) && (
+          <div className="max-w-7xl mx-auto mb-8">
+            <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-white">🕷️ Crawling Status</h3>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${isCrawling ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                    <span className="text-sm text-gray-300">
+                      {isCrawling ? 'Crawling...' : 'Completed'}
                 </span>
               </div>
-              <div className="count">{pageCount} pages discovered</div>
+                  {isCrawling && (
+                    <button
+                      onClick={() => {
+                        fetch('/crawl/stop', { method: 'POST' });
+                        setIsCrawling(false);
+                      }}
+                      className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                    >
+                      🛑 Stop
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div>
+                  <span className="text-2xl font-bold text-white">{pageCount}</span>
+                  <div className="text-sm text-gray-300">Pages Discovered</div>
+                </div>
+                {crawlStats && (
+                  <>
+                    <div>
+                      <span className="text-2xl font-bold text-white">{crawlStats.duration.toFixed(1)}s</span>
+                      <div className="text-sm text-gray-300">Duration</div>
+                    </div>
+                    <div>
+                      <span className="text-2xl font-bold text-white">{crawlStats.pagesPerSecond.toFixed(1)}</span>
+                      <div className="text-sm text-gray-300">Pages/Sec</div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="grid">
-              <div className="panel">
-                <h3>📝 Live Logs</h3>
-                <div className="logs">
+            {/* Live Logs and Discovered Pages */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Live Logs */}
+              <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">📝 Live Logs</h3>
+                <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto">
                   {logs.length === 0 ? (
-                    <div className="empty-state">
+                    <div className="text-gray-400 text-center py-8">
                       {isCrawling ? 'Crawling in progress...' : 'Waiting for crawl to start...'}
                     </div>
                   ) : (
-                    logs.map((log, index) => (
-                      <div key={index} className="log-entry">
-                        <span className="timestamp">[{new Date().toLocaleTimeString()}]</span> {log}
+                    <div className="space-y-2">
+                      {logs.map((log, index) => (
+                        <div key={index} className="text-sm text-gray-300 font-mono">
+                          <span className="text-gray-500">[{new Date().toLocaleTimeString()}]</span> {log}
+                        </div>
+                      ))}
                       </div>
-                    ))
                   )}
                 </div>
               </div>
 
-              <div className="panel">
-                <h3>🔗 Discovered Pages</h3>
-                <div className="pages">
+              {/* Discovered Pages */}
+              <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Discovered Pages</h3>
+                <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto">
                   {pages.length === 0 ? (
-                    <div className="empty-state">
+                    <div className="text-gray-400 text-center py-8">
                       {isCrawling ? 'Discovering pages...' : 'No pages discovered yet'}
                     </div>
                   ) : (
-                    pages.map((page, index) => (
-                      <div key={index} className="page-entry">
-                        <a href={page} target="_blank" rel="noreferrer noopener">
+                    <div className="space-y-2">
+                      {pages.map((page, index) => (
+                        <div key={index} className="text-sm">
+                          <a 
+                            href={page} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 break-all"
+                          >
                           {page}
                         </a>
                       </div>
-                    ))
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
 
-        {activeTab === 'schedules' && (
-          <ScheduleList />
-        )}
-
-        {activeTab === 'history' && (
-          <CronHistory onClose={() => setActiveTab('crawl')} />
-        )}
-
-        {activeTab === 'audits' && (
-          <AuditsPage />
-        )}
-
-        {activeTab === 'audit-schedules' && (
-          <AuditScheduleManager />
-        )}
-
-        {activeTab === 'seo-queue' && (
-          <SeoQueueManager onClose={() => setActiveTab('crawl')} />
-        )}
-      </main>
-
+        {/* Modal Components */}
       {showDataViewer && (
-        <DataViewer onClose={() => setShowDataViewer(false)} initialSessionId={initialViewerSessionId} />
+          <DataViewer 
+            onClose={() => setShowDataViewer(false)} 
+            initialSessionId={initialViewerSessionId} 
+          />
       )}
 
       {showLinkExplorer && (
@@ -734,60 +603,92 @@ function App() {
       )}
 
       {showWebTree && (
-        <WebTree onClose={() => setShowWebTree(false)} />
+          <WebTree 
+            onClose={() => setShowWebTree(false)} 
+          />
       )}
 
+        {/* Reuse Prompt Modal (like original crawler) */}
       {showReusePrompt && (
-        <div className="modal-overlay" onClick={() => setShowReusePrompt(false)}>
-          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="header"><h3>Recent crawl detected</h3></div>
-            <div className="body">
-              <div>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowReusePrompt(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent crawl detected</h3>
+                <div className="mb-4">
                 {recentStatus?.running ? (
-                  <>A crawl is currently running (started at {new Date(recentStatus.running.startedAt).toLocaleString()}).</>
+                    <p className="text-gray-600">
+                      A crawl is currently running (started at {new Date(recentStatus.running.startedAt).toLocaleString()}).
+                    </p>
                 ) : recentStatus?.latest ? (
-                  <>Last crawl finished at {new Date(recentStatus.latest.completedAt || recentStatus.latest.startedAt).toLocaleString()} and took ~{recentStatus.latest.duration ?? recentStatus.averageDurationSec ?? 0}s.</>
+                    <p className="text-gray-600">
+                      Last crawl finished at {new Date(recentStatus.latest.completedAt || recentStatus.latest.startedAt).toLocaleString()} and took ~{recentStatus.latest.duration ?? recentStatus.averageDurationSec ?? 0}s.
+                    </p>
                 ) : null}
               </div>
-              <div className="info-row">
+                
                 {recentStatus?.latest && (
-                  <>
-                    <span className="chip info">🔗 {url}</span>
-                    <span className="chip success">✅ {recentStatus.latest.totalPages} pages</span>
-                    <span className="chip">📦 {recentStatus.latest.totalResources} resources</span>
-                  </>
-                )}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm">🔗 {url}</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">✅ {recentStatus.latest.totalPages} pages</span>
+                    <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-sm">📦 {recentStatus.latest.totalResources} resources</span>
                 {recentStatus?.averageDurationSec != null && (
-                  <span className="chip warn">⏱ Avg ~{recentStatus.averageDurationSec}s</span>
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-sm">⏱ Avg ~{recentStatus.averageDurationSec}s</span>
                 )}
               </div>
-            </div>
-            <div className="actions">
-              <button className="btn btn-secondary" onClick={() => setShowReusePrompt(false)}>Cancel</button>
+                )}
+                
+                <div className="flex gap-3">
+                  <button 
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+                    onClick={() => setShowReusePrompt(false)}
+                  >
+                    Cancel
+                  </button>
+                  
               {recentStatus?.running ? (
-                <button className="btn btn-primary" onClick={async () => {
+                    <button 
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                      onClick={async () => {
                   setShowReusePrompt(false);
                   const runningId = recentStatus?.running?.id ?? null;
                   setInitialViewerSessionId(runningId);
                   setShowDataViewer(true);
-                }}>📡 View Current Run</button>
+                      }}
+                    >
+                      📡 View Current Run
+                    </button>
               ) : (
                 <>
-                  <button className="btn btn-primary" onClick={async () => {
+                      <button 
+                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        onClick={async () => {
                     setShowReusePrompt(false);
                     const lastId = recentStatus?.latest?.id ?? null;
                     setInitialViewerSessionId(lastId);
                     setShowDataViewer(true);
-                  }}>📊 View Last Results</button>
-                  <button className="btn" onClick={async () => { setShowReusePrompt(false); await startCrawl(); }}>🔁 Recrawl Now</button>
+                        }}
+                      >
+                        📊 View Last Results
+                      </button>
+                      <button 
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                        onClick={async () => { 
+                          setShowReusePrompt(false); 
+                          await handleSubmit(); 
+                        }}
+                      >
+                        🔁 Recrawl Now
+                      </button>
                 </>
               )}
+                </div>
             </div>
           </div>
         </div>
       )}
+      </div>
     </div>
   );
-}
+};
 
 export default App;

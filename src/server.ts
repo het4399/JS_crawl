@@ -28,7 +28,6 @@ app.use(cors());
 const bodyLimit = process.env.BODY_LIMIT || '5mb';
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
-app.use(express.static('public'));
 
 // Serve built frontend (Vite output)
 const __filename = fileURLToPath(import.meta.url);

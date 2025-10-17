@@ -64,8 +64,7 @@ export default defineConfig({
     outDir: 'dist-frontend',
     rollupOptions: {
       input: {
-        main: './index.html',
-        app2: './app2.html'
+        main: './index.html'
       }
     }
   }
