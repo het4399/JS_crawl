@@ -91,7 +91,7 @@ export class AuditScheduler {
     /**
      * Create a new audit schedule
      */
-    createSchedule(data: Omit<AuditSchedule, 'id' | 'createdAt' | 'totalRuns' | 'successfulRuns' | 'failedRuns'>): number {
+    createSchedule(data: Omit<AuditSchedule, 'id' | 'createdAt' | 'totalRuns' | 'successfulRuns' | 'failedRuns'> & { userId?: number }): number {
         // Validate cron expression
         const validation = CronParser.validateCronExpression(data.cronExpression);
         if (!validation.isValid) {

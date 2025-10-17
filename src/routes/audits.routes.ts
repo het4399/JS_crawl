@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { listRecent, getById } from '../audits/reader.js';
 import auditSchedulerRoutes from './audit.routes.js';
+import { authenticateUser } from '../auth/authMiddleware.js';
 
 export const auditsRoutes = Router();
 
-auditsRoutes.get('/audits', (req, res) => {
+auditsRoutes.get('/audits', authenticateUser, (req, res) => {
     try {
         const device = (req.query.device as string) || 'all';
         const limit = Math.min(500, Number(req.query.limit) || 100);
@@ -15,7 +16,7 @@ auditsRoutes.get('/audits', (req, res) => {
     }
 });
 
-auditsRoutes.get('/audits/:id', (req, res) => {
+auditsRoutes.get('/audits/:id', authenticateUser, (req, res) => {
     try {
         const id = req.params.id;
         const data = getById(id);

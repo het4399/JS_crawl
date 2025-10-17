@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runCrawl, cancelAudits, resetAuditCancellation } from './crawler.js';
@@ -10,6 +11,8 @@ import seoRoutes from './routes/seo.routes.js';
 import seoRedisQueueRoutes from './routes/seo-redis-queue.routes.js';
 import linksRoutes from './routes/links.routes.js';
 import aeoRoutes from './routes/aeo.routes.js';
+import authRoutes from './routes/auth.routes.js';
+import { authenticateUser, checkUsageLimit, optionalAuth } from './auth/authMiddleware.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
@@ -23,7 +26,11 @@ type Client = {
 const app = express();
 const logger = Logger.getInstance();
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    credentials: true // Allow cookies to be sent
+}));
+app.use(cookieParser());
 // Increase JSON body limit; configurable via BODY_LIMIT (default 5mb)
 const bodyLimit = process.env.BODY_LIMIT || '5mb';
 app.use(express.json({ limit: bodyLimit }));
@@ -38,6 +45,7 @@ app.use(express.static(distFrontendPath));
 // Add monitoring routes
 app.use('/api', monitoringRoutes);
 app.use('/api', auditsRoutes);
+app.use('/api/auth', authRoutes); // Authentication routes
 app.use(seoRoutes);
 app.use(seoRedisQueueRoutes);
 app.use(linksRoutes);
@@ -95,11 +103,18 @@ app.post('/api/cancel-audits', (req, res) => {
     }
 });
 
-// Schedule management routes
-app.get('/api/schedules', (req, res) => {
+// Schedule management routes (protected)
+app.get('/api/schedules', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
-        const schedules = scheduleManager.getAllSchedules();
+        const allSchedules = scheduleManager.getAllSchedules();
+        
+        // Filter schedules by user (admins can see all)
+        const schedules = req.user!.role === 'admin' 
+            ? allSchedules 
+            : allSchedules.filter((s: any) => s.userId === userId);
+        
         res.json({ schedules });
     } catch (error) {
         logger.error('Failed to get schedules', error as Error);
@@ -107,10 +122,16 @@ app.get('/api/schedules', (req, res) => {
     }
 });
 
-app.post('/api/schedules', (req, res) => {
+app.post('/api/schedules', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
-        const scheduleId = scheduleManager.createSchedule(req.body);
+        
+        // Add userId to schedule data
+        const scheduleData = { ...req.body, userId };
+        const scheduleId = scheduleManager.createSchedule(scheduleData);
+        
+        logger.info('Schedule created', { userId, scheduleId });
         res.json({ id: scheduleId, message: 'Schedule created successfully' });
     } catch (error) {
         logger.error('Failed to create schedule', error as Error);
@@ -118,13 +139,21 @@ app.post('/api/schedules', (req, res) => {
     }
 });
 
-app.get('/api/schedules/:id', (req, res) => {
+app.get('/api/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
-        const schedule = scheduleManager.getSchedule(parseInt(req.params.id));
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
         if (!schedule) {
             return res.status(404).json({ error: 'Schedule not found' });
         }
+        
+        // Check ownership (admins can access all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         res.json({ schedule });
     } catch (error) {
         logger.error('Failed to get schedule', error as Error);
@@ -132,9 +161,21 @@ app.get('/api/schedules/:id', (req, res) => {
     }
 });
 
-app.put('/api/schedules/:id', (req, res) => {
+app.put('/api/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can update all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         scheduleManager.updateSchedule(parseInt(req.params.id), req.body);
         res.json({ message: 'Schedule updated successfully' });
     } catch (error) {
@@ -143,9 +184,21 @@ app.put('/api/schedules/:id', (req, res) => {
     }
 });
 
-app.delete('/api/schedules/:id', (req, res) => {
+app.delete('/api/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can delete all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         scheduleManager.deleteSchedule(parseInt(req.params.id));
         res.json({ message: 'Schedule deleted successfully' });
     } catch (error) {
@@ -154,9 +207,21 @@ app.delete('/api/schedules/:id', (req, res) => {
     }
 });
 
-app.post('/api/schedules/:id/toggle', (req, res) => {
+app.post('/api/schedules/:id/toggle', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can toggle all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         scheduleManager.toggleSchedule(parseInt(req.params.id));
         res.json({ message: 'Schedule toggled successfully' });
     } catch (error) {
@@ -165,8 +230,21 @@ app.post('/api/schedules/:id/toggle', (req, res) => {
     }
 });
 
-app.post('/api/schedules/:id/trigger', async (req, res) => {
+app.post('/api/schedules/:id/trigger', authenticateUser, async (req, res) => {
     try {
+        const userId = req.user!.userId;
+        const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can trigger all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         await schedulerService.triggerSchedule(parseInt(req.params.id));
         res.json({ message: 'Schedule triggered successfully' });
     } catch (error) {
@@ -175,9 +253,21 @@ app.post('/api/schedules/:id/trigger', async (req, res) => {
     }
 });
 
-app.get('/api/schedules/:id/executions', (req, res) => {
+app.get('/api/schedules/:id/executions', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can view all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         const limit = parseInt(req.query.limit as string) || 50;
         const executions = scheduleManager.getExecutionHistory(parseInt(req.params.id), limit);
         res.json({ executions });
@@ -187,9 +277,21 @@ app.get('/api/schedules/:id/executions', (req, res) => {
     }
 });
 
-app.get('/api/schedules/:id/stats', (req, res) => {
+app.get('/api/schedules/:id/stats', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const scheduleManager = schedulerService.getScheduleManager();
+        const schedule = scheduleManager.getSchedule(parseInt(req.params.id)) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Schedule not found' });
+        }
+        
+        // Check ownership (admins can view all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         const stats = scheduleManager.getScheduleStats(parseInt(req.params.id));
         res.json({ stats });
     } catch (error) {
@@ -199,7 +301,7 @@ app.get('/api/schedules/:id/stats', (req, res) => {
 });
 
 
-app.get('/api/scheduler/status', (req, res) => {
+app.get('/api/scheduler/status', authenticateUser, (req, res) => {
     try {
         const status = schedulerService.getStatus();
         res.json({ status });
@@ -209,7 +311,7 @@ app.get('/api/scheduler/status', (req, res) => {
     }
 });
 
-app.post('/api/scheduler/validate-cron', (req, res) => {
+app.post('/api/scheduler/validate-cron', authenticateUser, (req, res) => {
     try {
         const { cronExpression } = req.body;
         if (!cronExpression) {
@@ -257,7 +359,10 @@ app.get('/events', (req, res) => {
     });
 });
 
-app.post('/crawl', async (req, res) => {
+app.post('/crawl', 
+    authenticateUser,              // Require authentication
+    checkUsageLimit('crawl'),      // Check daily usage limit
+    async (req, res) => {
     const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice, captureLinkDetails } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
@@ -292,7 +397,9 @@ app.post('/crawl', async (req, res) => {
     }
 
     const requestId = `crawl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    logger.info('Crawl request received', { url: safeUrl, allowSubdomains, maxConcurrency, mode }, requestId);
+    const userId = req.user!.userId; // Get authenticated user ID
+    
+    logger.info('Crawl request received', { url: safeUrl, userId, allowSubdomains, maxConcurrency, mode }, requestId);
     
     res.json({ ok: true, requestId, url: safeUrl });
 
@@ -303,6 +410,8 @@ app.post('/crawl', async (req, res) => {
     // Kick off crawl in background
     void (async () => {
         const startTime = Date.now();
+        const db = getDatabase();
+        
         sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log');
         
         try {
@@ -345,10 +454,19 @@ app.post('/crawl', async (req, res) => {
                     sendEvent(eventData, 'done');
                     
                     logger.info('Crawl completed', { 
+                        userId,
                         totalPages: count, 
                         duration: `${duration}ms`,
                         pagesPerSecond: pagesPerSecond
                     }, requestId);
+                    
+                    // Track user usage
+                    try {
+                        db.recordUserUsage(userId, 'crawl', 1);
+                        logger.info('User usage tracked', { userId, action: 'crawl' });
+                    } catch (error) {
+                        logger.error('Failed to track user usage', error as Error);
+                    }
                     
                     // Update health checker
                     healthChecker.setActiveCrawls(0);

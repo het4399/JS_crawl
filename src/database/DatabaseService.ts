@@ -10,6 +10,7 @@ export interface CrawlSession {
     maxConcurrency: number;
     mode: string;
     scheduleId?: number;
+    userId?: number;
     startedAt: string;
     completedAt?: string;
     totalPages: number;
@@ -79,6 +80,7 @@ export interface CrawlSchedule {
     mode: 'html' | 'js' | 'auto';
     cronExpression: string;
     enabled: boolean;
+    userId?: number;
     createdAt: string;
     lastRun?: string;
     nextRun?: string;
@@ -108,6 +110,7 @@ export interface AuditSchedule {
     device: 'mobile' | 'desktop';
     cronExpression: string;
     enabled: boolean;
+    userId?: number;
     createdAt: string;
     lastRun?: string;
     nextRun?: string;
@@ -162,6 +165,33 @@ export interface AEOExecution {
     errorMessage?: string;
 }
 
+export interface User {
+    id: number;
+    email: string;
+    passwordHash: string;
+    name: string | null;
+    createdAt: string;
+    lastLogin: string | null;
+    isActive: boolean;
+    role: 'user' | 'admin' | 'premium';
+}
+
+export interface UserSettings {
+    userId: number;
+    openaiApiKey: string | null;
+    psiApiKey: string | null;
+    maxCrawlsPerDay: number;
+    emailNotifications: boolean;
+}
+
+export interface UserUsage {
+    id: number;
+    userId: number;
+    actionType: string; // 'crawl' | 'audit' | 'aeo_analysis'
+    timestamp: string;
+    creditsUsed: number;
+}
+
 export class DatabaseService {
     private db: Database.Database;
     private logger: Logger;
@@ -183,6 +213,44 @@ export class DatabaseService {
     }
 
     private initializeTables() {
+        // Create users table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                name TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                role TEXT NOT NULL DEFAULT 'user'
+            )
+        `);
+
+        // Create user_settings table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id INTEGER PRIMARY KEY,
+                openai_api_key TEXT,
+                psi_api_key TEXT,
+                max_crawls_per_day INTEGER DEFAULT 10,
+                email_notifications INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        `);
+
+        // Create user_usage table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS user_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                credits_used INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        `);
+
         // Create crawl_sessions table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS crawl_sessions (
@@ -425,6 +493,12 @@ export class DatabaseService {
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE pages ADD COLUMN word_count INTEGER DEFAULT 0'); } catch {}
         try { this.db.exec('ALTER TABLE crawl_sessions ADD COLUMN schedule_id INTEGER'); } catch {}
+        
+        // Add user_id columns to existing tables for multi-user support
+        try { this.db.exec('ALTER TABLE crawl_sessions ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
+        try { this.db.exec('ALTER TABLE crawl_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
+        try { this.db.exec('ALTER TABLE audit_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
+        try { this.db.exec('ALTER TABLE aeo_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
 
         // Create indexes for better performance
         this.db.exec(`
@@ -448,6 +522,15 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_crawl_schedules_enabled ON crawl_schedules (enabled);
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule_id ON schedule_executions (schedule_id);
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions (status);
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+            CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
+            CREATE INDEX IF NOT EXISTS idx_users_is_active ON users (is_active);
+            CREATE INDEX IF NOT EXISTS idx_user_usage_user_id ON user_usage (user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_usage_timestamp ON user_usage (timestamp);
+            CREATE INDEX IF NOT EXISTS idx_crawl_sessions_user_id ON crawl_sessions (user_id);
+            CREATE INDEX IF NOT EXISTS idx_crawl_schedules_user_id ON crawl_schedules (user_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_schedules_user_id ON audit_schedules (user_id);
+            CREATE INDEX IF NOT EXISTS idx_aeo_schedules_user_id ON aeo_schedules (user_id);
         `);
 
         this.logger.info('Database tables initialized');
@@ -2089,6 +2172,228 @@ export class DatabaseService {
     // Public method to access the database instance for raw queries
     getDb(): Database.Database {
         return this.db;
+    }
+
+    // ==================== User Management Methods ====================
+    
+    createUser(data: Omit<User, 'id' | 'createdAt' | 'lastLogin'>): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO users (email, password_hash, name, created_at, is_active, role)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.email,
+            data.passwordHash,
+            data.name || null,
+            new Date().toISOString(),
+            data.isActive ? 1 : 0,
+            data.role
+        );
+        
+        const userId = result.lastInsertRowid as number;
+        
+        // Create default user settings
+        const settingsStmt = this.db.prepare(`
+            INSERT INTO user_settings (user_id, max_crawls_per_day, email_notifications)
+            VALUES (?, 10, 1)
+        `);
+        settingsStmt.run(userId);
+        
+        return userId;
+    }
+
+    getUserById(id: number): User | null {
+        const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
+        const row = stmt.get(id) as any;
+        
+        if (!row) return null;
+        
+        return {
+            id: row.id,
+            email: row.email,
+            passwordHash: row.password_hash,
+            name: row.name,
+            createdAt: row.created_at,
+            lastLogin: row.last_login,
+            isActive: Boolean(row.is_active),
+            role: row.role
+        };
+    }
+
+    getUserByEmail(email: string): User | null {
+        const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
+        const row = stmt.get(email) as any;
+        
+        if (!row) return null;
+        
+        return {
+            id: row.id,
+            email: row.email,
+            passwordHash: row.password_hash,
+            name: row.name,
+            createdAt: row.created_at,
+            lastLogin: row.last_login,
+            isActive: Boolean(row.is_active),
+            role: row.role
+        };
+    }
+
+    updateUser(id: number, updates: Partial<Omit<User, 'id' | 'createdAt'>>): void {
+        const fields: string[] = [];
+        const values: any[] = [];
+        
+        if (updates.email !== undefined) { fields.push('email = ?'); values.push(updates.email); }
+        if (updates.passwordHash !== undefined) { fields.push('password_hash = ?'); values.push(updates.passwordHash); }
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.lastLogin !== undefined) { fields.push('last_login = ?'); values.push(updates.lastLogin); }
+        if (updates.isActive !== undefined) { fields.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+        if (updates.role !== undefined) { fields.push('role = ?'); values.push(updates.role); }
+        
+        if (fields.length === 0) return;
+        
+        values.push(id);
+        const stmt = this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    updateUserLastLogin(userId: number): void {
+        const stmt = this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?');
+        stmt.run(new Date().toISOString(), userId);
+    }
+
+    deleteUser(id: number): void {
+        const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
+        stmt.run(id);
+    }
+
+    getAllUsers(limit: number = 100, offset: number = 0): User[] {
+        const stmt = this.db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?');
+        const rows = stmt.all(limit, offset) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            email: row.email,
+            passwordHash: row.password_hash,
+            name: row.name,
+            createdAt: row.created_at,
+            lastLogin: row.last_login,
+            isActive: Boolean(row.is_active),
+            role: row.role
+        }));
+    }
+
+    // User Settings Methods
+    getUserSettings(userId: number): UserSettings | null {
+        const stmt = this.db.prepare('SELECT * FROM user_settings WHERE user_id = ?');
+        const row = stmt.get(userId) as any;
+        
+        if (!row) return null;
+        
+        return {
+            userId: row.user_id,
+            openaiApiKey: row.openai_api_key,
+            psiApiKey: row.psi_api_key,
+            maxCrawlsPerDay: row.max_crawls_per_day,
+            emailNotifications: Boolean(row.email_notifications)
+        };
+    }
+
+    updateUserSettings(userId: number, updates: Partial<Omit<UserSettings, 'userId'>>): void {
+        const fields: string[] = [];
+        const values: any[] = [];
+        
+        if (updates.openaiApiKey !== undefined) { fields.push('openai_api_key = ?'); values.push(updates.openaiApiKey); }
+        if (updates.psiApiKey !== undefined) { fields.push('psi_api_key = ?'); values.push(updates.psiApiKey); }
+        if (updates.maxCrawlsPerDay !== undefined) { fields.push('max_crawls_per_day = ?'); values.push(updates.maxCrawlsPerDay); }
+        if (updates.emailNotifications !== undefined) { fields.push('email_notifications = ?'); values.push(updates.emailNotifications ? 1 : 0); }
+        
+        if (fields.length === 0) return;
+        
+        values.push(userId);
+        const stmt = this.db.prepare(`UPDATE user_settings SET ${fields.join(', ')} WHERE user_id = ?`);
+        stmt.run(...values);
+    }
+
+    // User Usage Tracking Methods
+    recordUserUsage(userId: number, actionType: string, creditsUsed: number = 1): void {
+        const stmt = this.db.prepare(`
+            INSERT INTO user_usage (user_id, action_type, timestamp, credits_used)
+            VALUES (?, ?, ?, ?)
+        `);
+        stmt.run(userId, actionType, new Date().toISOString(), creditsUsed);
+    }
+
+    getUserUsage(userId: number, actionType?: string, limit: number = 100): UserUsage[] {
+        let query = 'SELECT * FROM user_usage WHERE user_id = ?';
+        const params: any[] = [userId];
+        
+        if (actionType) {
+            query += ' AND action_type = ?';
+            params.push(actionType);
+        }
+        
+        query += ' ORDER BY timestamp DESC LIMIT ?';
+        params.push(limit);
+        
+        const stmt = this.db.prepare(query);
+        const rows = stmt.all(...params) as any[];
+        
+        return rows.map(row => ({
+            id: row.id,
+            userId: row.user_id,
+            actionType: row.action_type,
+            timestamp: row.timestamp,
+            creditsUsed: row.credits_used
+        }));
+    }
+
+    getUserUsageStats(userId: number, since?: string): {
+        totalCrawls: number;
+        totalAudits: number;
+        totalAeoAnalyses: number;
+        totalCredits: number;
+    } {
+        let query = `
+            SELECT 
+                SUM(CASE WHEN action_type = 'crawl' THEN 1 ELSE 0 END) as crawls,
+                SUM(CASE WHEN action_type = 'audit' THEN 1 ELSE 0 END) as audits,
+                SUM(CASE WHEN action_type = 'aeo_analysis' THEN 1 ELSE 0 END) as aeo_analyses,
+                SUM(credits_used) as total_credits
+            FROM user_usage
+            WHERE user_id = ?
+        `;
+        const params: any[] = [userId];
+        
+        if (since) {
+            query += ' AND timestamp >= ?';
+            params.push(since);
+        }
+        
+        const stmt = this.db.prepare(query);
+        const result = stmt.get(...params) as any;
+        
+        return {
+            totalCrawls: result.crawls || 0,
+            totalAudits: result.audits || 0,
+            totalAeoAnalyses: result.aeo_analyses || 0,
+            totalCredits: result.total_credits || 0
+        };
+    }
+
+    getTodayUsageCount(userId: number, actionType: string): number {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString();
+        
+        const stmt = this.db.prepare(`
+            SELECT COUNT(*) as count
+            FROM user_usage
+            WHERE user_id = ? AND action_type = ? AND timestamp >= ?
+        `);
+        
+        const result = stmt.get(userId, actionType, todayStr) as any;
+        return result.count || 0;
     }
 }
 

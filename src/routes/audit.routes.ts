@@ -1,6 +1,7 @@
 import express from 'express';
 import { AuditScheduler } from '../audits/AuditScheduler.js';
 import { Logger } from '../logging/Logger.js';
+import { authenticateUser } from '../auth/authMiddleware.js';
 
 const router = express.Router();
 const logger = Logger.getInstance();
@@ -12,9 +13,16 @@ const auditScheduler = new AuditScheduler();
 auditScheduler.start();
 
 // Get all audit schedules
-router.get('/schedules', (req, res) => {
+router.get('/schedules', authenticateUser, (req, res) => {
     try {
-        const schedules = auditScheduler.getAllSchedules();
+        const userId = req.user!.userId;
+        const allSchedules = auditScheduler.getAllSchedules();
+        
+        // Filter by user (admins can see all)
+        const schedules = req.user!.role === 'admin'
+            ? allSchedules
+            : allSchedules.filter((s: any) => s.userId === userId);
+        
         res.json(schedules);
     } catch (error) {
         logger.error('Error fetching audit schedules', error as Error);
@@ -23,13 +31,19 @@ router.get('/schedules', (req, res) => {
 });
 
 // Get a specific audit schedule
-router.get('/schedules/:id', (req, res) => {
+router.get('/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const id = parseInt(req.params.id);
-        const schedule = auditScheduler.getSchedule(id);
+        const schedule = auditScheduler.getSchedule(id) as any;
         
         if (!schedule) {
             return res.status(404).json({ error: 'Audit schedule not found' });
+        }
+        
+        // Check ownership (admins can view all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
         }
         
         res.json(schedule);
@@ -40,8 +54,9 @@ router.get('/schedules/:id', (req, res) => {
 });
 
 // Create a new audit schedule
-router.post('/schedules', (req, res) => {
+router.post('/schedules', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const { name, description, urls, device, cronExpression, enabled = true } = req.body;
         
         // Validate required fields
@@ -70,7 +85,8 @@ router.post('/schedules', (req, res) => {
             urls,
             device,
             cronExpression,
-            enabled
+            enabled,
+            userId
         });
         
         res.status(201).json({ 
@@ -84,9 +100,21 @@ router.post('/schedules', (req, res) => {
 });
 
 // Update an audit schedule
-router.put('/schedules/:id', (req, res) => {
+router.put('/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const id = parseInt(req.params.id);
+        const schedule = auditScheduler.getSchedule(id) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Audit schedule not found' });
+        }
+        
+        // Check ownership (admins can update all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         const updates = req.body;
         
         // Validate device if provided
@@ -113,9 +141,21 @@ router.put('/schedules/:id', (req, res) => {
 });
 
 // Delete an audit schedule
-router.delete('/schedules/:id', (req, res) => {
+router.delete('/schedules/:id', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const id = parseInt(req.params.id);
+        const schedule = auditScheduler.getSchedule(id) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Audit schedule not found' });
+        }
+        
+        // Check ownership (admins can delete all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         auditScheduler.deleteSchedule(id);
         res.json({ message: 'Audit schedule deleted successfully' });
     } catch (error) {
@@ -125,9 +165,21 @@ router.delete('/schedules/:id', (req, res) => {
 });
 
 // Toggle audit schedule enabled/disabled
-router.patch('/schedules/:id/toggle', (req, res) => {
+router.patch('/schedules/:id/toggle', authenticateUser, (req, res) => {
     try {
+        const userId = req.user!.userId;
         const id = parseInt(req.params.id);
+        const schedule = auditScheduler.getSchedule(id) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Audit schedule not found' });
+        }
+        
+        // Check ownership (admins can toggle all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         auditScheduler.toggleSchedule(id);
         res.json({ message: 'Audit schedule toggled successfully' });
     } catch (error) {
@@ -137,9 +189,21 @@ router.patch('/schedules/:id/toggle', (req, res) => {
 });
 
 // Manually trigger an audit schedule
-router.post('/schedules/:id/trigger', async (req, res) => {
+router.post('/schedules/:id/trigger', authenticateUser, async (req, res) => {
     try {
+        const userId = req.user!.userId;
         const id = parseInt(req.params.id);
+        const schedule = auditScheduler.getSchedule(id) as any;
+        
+        if (!schedule) {
+            return res.status(404).json({ error: 'Audit schedule not found' });
+        }
+        
+        // Check ownership (admins can trigger all)
+        if (req.user!.role !== 'admin' && schedule.userId !== userId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
         await auditScheduler.triggerSchedule(id);
         res.json({ message: 'Audit schedule triggered successfully' });
     } catch (error) {
@@ -149,7 +213,7 @@ router.post('/schedules/:id/trigger', async (req, res) => {
 });
 
 // Get execution history for a schedule
-router.get('/schedules/:id/executions', (req, res) => {
+router.get('/schedules/:id/executions', authenticateUser, (req, res) => {
     try {
         const id = parseInt(req.params.id);
         const limit = parseInt(req.query.limit as string) || 50;
@@ -162,7 +226,7 @@ router.get('/schedules/:id/executions', (req, res) => {
 });
 
 // Get all audit executions
-router.get('/executions', (req, res) => {
+router.get('/executions', authenticateUser, (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 100;
         const executions = auditScheduler.getAllExecutions(limit);
@@ -174,7 +238,7 @@ router.get('/executions', (req, res) => {
 });
 
 // Get audit scheduler status
-router.get('/status', (req, res) => {
+router.get('/status', authenticateUser, (req, res) => {
     try {
         const status = auditScheduler.getStatus();
         res.json(status);
@@ -185,7 +249,7 @@ router.get('/status', (req, res) => {
 });
 
 // Start audit scheduler
-router.post('/start', (req, res) => {
+router.post('/start', authenticateUser, (req, res) => {
     try {
         auditScheduler.start();
         res.json({ message: 'Audit scheduler started successfully' });
@@ -196,7 +260,7 @@ router.post('/start', (req, res) => {
 });
 
 // Stop audit scheduler
-router.post('/stop', (req, res) => {
+router.post('/stop', authenticateUser, (req, res) => {
     try {
         auditScheduler.stop();
         res.json({ message: 'Audit scheduler stopped successfully' });

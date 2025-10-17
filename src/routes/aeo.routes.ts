@@ -1,5 +1,6 @@
 import express from 'express';
 import { Logger } from '../logging/Logger.js';
+import { authenticateUser, checkUsageLimit } from '../auth/authMiddleware.js';
 
 const router = express.Router();
 const logger = Logger.getInstance();
@@ -8,9 +9,15 @@ const logger = Logger.getInstance();
 const AEO_API_BASE_URL = process.env.AEO_API_BASE_URL || 'http://localhost:8000';
 
 // Proxy AEO analysis requests to FastAPI
-router.post('/analyze', async (req, res) => {
+router.post('/analyze', 
+    authenticateUser,
+    checkUsageLimit('aeo_analysis'),
+    async (req, res) => {
     try {
-        logger.info('Proxying AEO analysis request to FastAPI');
+        const userId = req.user!.userId;
+        const db = await import('../database/DatabaseService.js').then(m => m.getDatabase());
+        
+        logger.info('Proxying AEO analysis request to FastAPI', { userId });
         
         const response = await fetch(`${AEO_API_BASE_URL}/api/aeo/analyze`, {
             method: 'POST',
@@ -30,7 +37,15 @@ router.post('/analyze', async (req, res) => {
         }
 
         const data = await response.json();
-        logger.info('AEO analysis completed successfully');
+        
+        // Track user usage
+        try {
+            db.recordUserUsage(userId, 'aeo_analysis', 1);
+        } catch (error) {
+            logger.error('Failed to track AEO usage', error as Error);
+        }
+        
+        logger.info('AEO analysis completed successfully', { userId });
         res.json(data);
     } catch (error) {
         logger.error('AEO analysis proxy error:', error);

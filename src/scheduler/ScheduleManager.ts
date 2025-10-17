@@ -40,7 +40,7 @@ export class ScheduleManager {
     /**
      * Create a new crawl schedule
      */
-    createSchedule(data: Omit<CrawlSchedule, 'id' | 'createdAt' | 'totalRuns' | 'successfulRuns' | 'failedRuns'>): number {
+    createSchedule(data: Omit<CrawlSchedule, 'id' | 'createdAt' | 'totalRuns' | 'successfulRuns' | 'failedRuns'> & { userId?: number }): number {
         // Validate cron expression
         const validation = CronParser.validateCronExpression(data.cronExpression);
         if (!validation.isValid) {

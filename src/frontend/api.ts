@@ -51,6 +51,19 @@ class ApiService {
     this.baseURL = baseURL;
   }
 
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem('accessToken');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  }
+
   async analyzeUrl(url: string, crawlerOptions?: {
     allowSubdomains: boolean;
     runAudits: boolean;
@@ -64,7 +77,8 @@ class ApiService {
 
         const crawlResponse = await fetch('/crawl', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.getAuthHeaders(),
+          credentials: 'include',
           body: JSON.stringify({ 
             url: url.trim(),
             allowSubdomains: crawlerOptions.allowSubdomains,
@@ -75,7 +89,21 @@ class ApiService {
         });
 
         if (!crawlResponse.ok) {
-          throw new Error('Crawler failed to start');
+          const errorData = await crawlResponse.json().catch(() => ({}));
+          
+          // Handle authentication errors
+          if (crawlResponse.status === 401) {
+            localStorage.removeItem('accessToken');
+            window.location.href = '/login';
+            throw new Error('Please login to continue');
+          }
+          
+          // Handle usage limit errors
+          if (crawlResponse.status === 429) {
+            throw new Error(errorData.message || 'Daily usage limit exceeded. Please upgrade or try again tomorrow.');
+          }
+          
+          throw new Error(errorData.error || errorData.message || 'Crawler failed to start');
         }
 
         // Then get AEO analysis for the main URL
@@ -85,15 +113,28 @@ class ApiService {
           `${this.baseURL}/aeo/analyze`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: this.getAuthHeaders(),
+            credentials: 'include',
             body: JSON.stringify({ url: url.trim() }),
           }
         );
 
         if (!aeoResponse.ok) {
-          throw new Error('AEO analysis failed');
+          const errorData = await aeoResponse.json().catch(() => ({}));
+          
+          // Handle authentication errors
+          if (aeoResponse.status === 401) {
+            localStorage.removeItem('accessToken');
+            window.location.href = '/login';
+            throw new Error('Please login to continue');
+          }
+          
+          // Handle usage limit errors
+          if (aeoResponse.status === 429) {
+            throw new Error(errorData.message || 'Daily usage limit exceeded');
+          }
+          
+          throw new Error(errorData.error || errorData.message || 'AEO analysis failed');
         }
 
         const aeoData = await aeoResponse.json();
@@ -114,15 +155,28 @@ class ApiService {
           `${this.baseURL}/aeo/analyze`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: this.getAuthHeaders(),
+            credentials: 'include',
             body: JSON.stringify({ url: url.trim() }),
           }
         );
 
         if (!response.ok) {
-          throw new Error('AEO analysis failed');
+          const errorData = await response.json().catch(() => ({}));
+          
+          // Handle authentication errors
+          if (response.status === 401) {
+            localStorage.removeItem('accessToken');
+            window.location.href = '/login';
+            throw new Error('Please login to continue');
+          }
+          
+          // Handle usage limit errors
+          if (response.status === 429) {
+            throw new Error(errorData.message || 'Daily usage limit exceeded');
+          }
+          
+          throw new Error(errorData.error || errorData.message || 'AEO analysis failed');
         }
 
         const data = await response.json();

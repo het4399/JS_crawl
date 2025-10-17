@@ -1,5 +1,6 @@
 import express from 'express';
 import { getDatabase } from '../database/DatabaseService.js';
+import { authenticateUser } from '../auth/authMiddleware.js';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.get('/api/seo/health', async (_req, res) => {
     }
 });
 
-router.post('/api/seo/extract', async (req, res) => {
+router.post('/api/seo/extract', authenticateUser, async (req, res) => {
     try {
         const { url, final_url } = req.body ?? {};
         
@@ -55,7 +56,7 @@ router.post('/api/seo/extract', async (req, res) => {
 });
 
 // Cache management endpoints
-router.get('/api/seo/cache/stats', async (req, res) => {
+router.get('/api/seo/cache/stats', authenticateUser, async (req, res) => {
     try {
         const db = getDatabase();
         const stats = await db.getSeoCacheStats();
@@ -65,7 +66,7 @@ router.get('/api/seo/cache/stats', async (req, res) => {
     }
 });
 
-router.post('/api/seo/cache/clear-expired', async (req, res) => {
+router.post('/api/seo/cache/clear-expired', authenticateUser, async (req, res) => {
     try {
         const db = getDatabase();
         const deletedCount = await db.clearExpiredSeoCache();
@@ -75,7 +76,7 @@ router.post('/api/seo/cache/clear-expired', async (req, res) => {
     }
 });
 
-router.get('/api/seo/cache/:url', async (req, res) => {
+router.get('/api/seo/cache/:url', authenticateUser, async (req, res) => {
     try {
         const { url } = req.params;
         const db = getDatabase();
@@ -95,7 +96,7 @@ router.get('/api/seo/cache/:url', async (req, res) => {
     }
 });
 
-router.delete('/api/seo/cache/:url', async (req, res) => {
+router.delete('/api/seo/cache/:url', authenticateUser, async (req, res) => {
     try {
         const { url } = req.params;
         const db = getDatabase();

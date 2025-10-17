@@ -1,6 +1,6 @@
-## Fast website crawler (TypeScript + Crawlee)
+## Contentlytics - Content Analytics & AEO Intelligence Platform
 
-Discovers all pages on a site quickly using Crawlee's CheerioCrawler. No depth limit; constrained to the same site by default. Starts with sitemap seeding when available.
+Fast website crawler and AEO analysis platform built with TypeScript + Crawlee. Discovers all pages on a site quickly using Crawlee's CheerioCrawler. No depth limit; constrained to the same site by default. Starts with sitemap seeding when available.
 
 ### Prerequisites
 - Node.js 18+
