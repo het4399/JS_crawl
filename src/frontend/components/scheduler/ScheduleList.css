@@ -209,7 +209,8 @@
 }
 
 .stat-card {
-    background: #f8f9fa;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     padding: 15px;
     border-radius: 6px;
     text-align: center;
@@ -217,7 +218,7 @@
 
 .stat-card h4 {
     margin: 0 0 10px 0;
-    color: #666;
+    color: #9ca3af;
     font-size: 0.9em;
     font-weight: 500;
 }
@@ -225,7 +226,7 @@
 .stat-value {
     font-size: 1.5em;
     font-weight: 600;
-    color: #333;
+    color: #ffffff;
 }
 
 .modal-overlay {

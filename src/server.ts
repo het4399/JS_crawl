@@ -21,6 +21,7 @@ import { AuditIntegration } from './audits/AuditIntegration.js';
 type Client = {
     id: number;
     res: express.Response;
+    userId: number;
 };
 
 const app = express();
@@ -332,30 +333,55 @@ app.post('/api/scheduler/validate-cron', authenticateUser, (req, res) => {
 let nextClientId = 1;
 const clients: Client[] = [];
 
-function sendEvent(data: unknown, event: string = 'message') {
+// Updated to support user-specific events
+function sendEvent(data: unknown, event: string = 'message', userId?: number) {
     const jsonString = JSON.stringify(data);
     const payload = `event: ${event}\ndata: ${jsonString}\n\n`;
     console.log('sendEvent data:', data);
-    console.log('sendEvent jsonString:', jsonString);
-    console.log('sendEvent payload:', payload);
-    for (const c of clients) {
-        c.res.write(payload);
+    console.log('sendEvent userId:', userId);
+    
+    // If userId is specified, only send to that user's clients
+    const targetClients = userId 
+        ? clients.filter(c => c.userId === userId)
+        : clients; // Fallback to broadcast if no userId (for backwards compatibility)
+    
+    for (const c of targetClients) {
+        try {
+            c.res.write(payload);
+        } catch (error) {
+            console.error('Failed to write to client:', error);
+        }
+    }
+    
+    if (userId) {
+        console.log(`Event sent to ${targetClients.length} client(s) for user ${userId}`);
     }
 }
 
-app.get('/events', (req, res) => {
+// Protected SSE endpoint - requires authentication
+app.get('/events', authenticateUser, (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
     res.flushHeaders?.();
     res.write('\n');
 
     const id = nextClientId++;
-    clients.push({ id, res });
+    const userId = req.user!.userId; // Get authenticated user ID
+    
+    clients.push({ id, res, userId });
+    logger.info(`SSE client connected: ${id} for user ${userId}`);
+
+    // Send initial connection confirmation
+    res.write(`event: connected\ndata: ${JSON.stringify({ clientId: id, userId })}\n\n`);
 
     req.on('close', () => {
         const idx = clients.findIndex((c) => c.id === id);
-        if (idx !== -1) clients.splice(idx, 1);
+        if (idx !== -1) {
+            clients.splice(idx, 1);
+            logger.info(`SSE client disconnected: ${id} for user ${userId}`);
+        }
     });
 });
 
@@ -412,7 +438,7 @@ app.post('/crawl',
         const startTime = Date.now();
         const db = getDatabase();
         
-        sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log');
+        sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log', userId);
         
         try {
             await runCrawl({
@@ -425,16 +451,17 @@ app.post('/crawl',
                     .map((s) => s.trim().toLowerCase())
                     .filter(Boolean),
                 mode: 'html',
+                userId: userId,
                 runAudits: Boolean(runAudits),
                 auditDevice: auditDevice === 'mobile' ? 'mobile' : 'desktop',
                 captureLinkDetails: Boolean(captureLinkDetails),
             }, {
                 onLog: (msg) => {
-                    sendEvent({ type: 'log', message: msg }, 'log');
+                    sendEvent({ type: 'log', message: msg }, 'log', userId);
                     logger.info(msg, {}, requestId);
                 },
                 onPage: (urlFound) => {
-                    sendEvent({ type: 'page', url: urlFound }, 'page');
+                    sendEvent({ type: 'page', url: urlFound }, 'page', userId);
                     logger.debug('Page discovered', { url: urlFound }, requestId);
                 },
                 onDone: async (count) => {
@@ -451,7 +478,7 @@ app.post('/crawl',
                     
                     console.log('Sending done event:', eventData);
                     console.log('Duration calculation:', { startTime, currentTime: Date.now(), duration, durationSeconds, pagesPerSecond });
-                    sendEvent(eventData, 'done');
+                    sendEvent(eventData, 'done', userId);
                     
                     logger.info('Crawl completed', { 
                         userId,
@@ -472,7 +499,7 @@ app.post('/crawl',
                     healthChecker.setActiveCrawls(0);
                 },
                 onAuditStart: (url) => {
-                    sendEvent({ type: 'audit-start', url }, 'audit');
+                    sendEvent({ type: 'audit-start', url }, 'audit', userId);
                     logger.info(`Starting audit for ${url}`, {}, requestId);
                 },
                 onAuditComplete: (url, success, lcp, tbt, cls, performanceScore) => {
@@ -482,20 +509,20 @@ app.post('/crawl',
                         success, 
                         lcp, 
                         tbt, 
-                        cls,
-                        performanceScore
-                    }, 'audit');
+                        cls, 
+                        performanceScore 
+                    }, 'audit', userId);
                     logger.info(`Audit completed for ${url}`, { success, lcp, tbt, cls, performanceScore }, requestId);
                 },
                 onAuditResults: (results) => {
-                    sendEvent({ type: 'audit-results', results }, 'audit');
+                    sendEvent({ type: 'audit-results', results }, 'audit', userId);
                     logger.info('Audit results received', { resultCount: results.length }, requestId);
                 },
             }, metricsCollector);
         } catch (e) {
             const error = e as Error;
             const duration = Date.now() - startTime;
-            sendEvent({ type: 'log', message: `Error: ${error.message}` }, 'log');
+            sendEvent({ type: 'log', message: `Error: ${error.message}` }, 'log', userId);
             logger.error('Crawl failed', error, { duration: `${duration}ms` }, requestId);
             healthChecker.recordError(error.message);
             healthChecker.setActiveCrawls(0);

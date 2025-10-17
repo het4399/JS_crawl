@@ -540,8 +540,8 @@ export class DatabaseService {
     createCrawlSession(data: Omit<CrawlSession, 'id'>): number {
         const stmt = this.db.prepare(`
             INSERT INTO crawl_sessions 
-            (start_url, allow_subdomains, max_concurrency, mode, schedule_id, started_at, completed_at, total_pages, total_resources, duration, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (start_url, allow_subdomains, max_concurrency, mode, schedule_id, user_id, started_at, completed_at, total_pages, total_resources, duration, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = stmt.run(
@@ -550,6 +550,7 @@ export class DatabaseService {
             data.maxConcurrency,
             data.mode,
             data.scheduleId ?? null,
+            data.userId ?? null,
             data.startedAt,
             data.completedAt ?? null,
             data.totalPages,
@@ -621,13 +622,25 @@ export class DatabaseService {
         } as CrawlSession;
     }
 
-    getCrawlSessions(limit: number = 50, offset: number = 0, scheduleId?: number): CrawlSession[] {
+    getCrawlSessions(limit: number = 50, offset: number = 0, scheduleId?: number, userId?: number): CrawlSession[] {
         let query = 'SELECT * FROM crawl_sessions';
         const params: any[] = [];
+        const conditions: string[] = [];
+        
         if (typeof scheduleId === 'number') {
-            query += ' WHERE schedule_id = ?';
+            conditions.push('schedule_id = ?');
             params.push(scheduleId);
         }
+        
+        if (typeof userId === 'number') {
+            conditions.push('user_id = ?');
+            params.push(userId);
+        }
+        
+        if (conditions.length > 0) {
+            query += ' WHERE ' + conditions.join(' AND ');
+        }
+        
         query += ' ORDER BY started_at DESC LIMIT ? OFFSET ?';
         params.push(limit, offset);
 
@@ -650,23 +663,49 @@ export class DatabaseService {
     }
 
     // New helpers for status lookup by URL
-    getLatestSessionByUrl(startUrl: string): CrawlSession | null {
-        const stmt = this.db.prepare('SELECT * FROM crawl_sessions WHERE start_url = ? ORDER BY started_at DESC LIMIT 1');
-        const row = stmt.get(startUrl) as any;
+    getLatestSessionByUrl(startUrl: string, userId?: number): CrawlSession | null {
+        let query = 'SELECT * FROM crawl_sessions WHERE start_url = ?';
+        const params: any[] = [startUrl];
+        
+        if (typeof userId === 'number') {
+            query += ' AND user_id = ?';
+            params.push(userId);
+        }
+        
+        query += ' ORDER BY started_at DESC LIMIT 1';
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(...params) as any;
         if (!row) return null;
         return { ...row, scheduleId: row.schedule_id ?? undefined, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
     }
 
-    getRunningSessionByUrl(startUrl: string): CrawlSession | null {
-        const stmt = this.db.prepare("SELECT * FROM crawl_sessions WHERE start_url = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1");
-        const row = stmt.get(startUrl) as any;
+    getRunningSessionByUrl(startUrl: string, userId?: number): CrawlSession | null {
+        let query = "SELECT * FROM crawl_sessions WHERE start_url = ? AND status = 'running'";
+        const params: any[] = [startUrl];
+        
+        if (typeof userId === 'number') {
+            query += ' AND user_id = ?';
+            params.push(userId);
+        }
+        
+        query += ' ORDER BY started_at DESC LIMIT 1';
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(...params) as any;
         if (!row) return null;
         return { ...row, scheduleId: row.schedule_id ?? undefined, allowSubdomains: Boolean(row.allow_subdomains) } as CrawlSession;
     }
 
-    getAverageDurationForUrl(startUrl: string): number | null {
-        const stmt = this.db.prepare("SELECT AVG(duration) as avgDuration FROM crawl_sessions WHERE start_url = ? AND status = 'completed'");
-        const row = stmt.get(startUrl) as any;
+    getAverageDurationForUrl(startUrl: string, userId?: number): number | null {
+        let query = "SELECT AVG(duration) as avgDuration FROM crawl_sessions WHERE start_url = ? AND status = 'completed'";
+        const params: any[] = [startUrl];
+        
+        if (typeof userId === 'number') {
+            query += ' AND user_id = ?';
+            params.push(userId);
+        }
+        
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(...params) as any;
         if (!row || row.avgDuration == null) return null;
         return Math.floor(row.avgDuration as number);
     }

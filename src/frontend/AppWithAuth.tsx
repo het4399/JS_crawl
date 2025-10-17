@@ -40,9 +40,21 @@ const AppWithAuth: React.FC = () => {
     pagesPerSecond: number;
   } | null>(null);
 
-  // Server-Sent Events for live updates
+  // Server-Sent Events for live updates (only for authenticated users)
   React.useEffect(() => {
+    // Only connect SSE if user is authenticated
+    if (!isAuthenticated) {
+      console.log('SSE: User not authenticated, skipping connection');
+      return;
+    }
+
+    console.log('SSE: Connecting for authenticated user...');
     const eventSource = new EventSource('/events');
+
+    eventSource.addEventListener('connected', (e) => {
+      const data = JSON.parse(e.data);
+      console.log('SSE connected:', data);
+    });
 
     eventSource.addEventListener('log', (e) => {
       const data = JSON.parse(e.data);
@@ -66,8 +78,17 @@ const AppWithAuth: React.FC = () => {
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count}`]);
     });
 
-    return () => eventSource.close();
-  }, []);
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      // EventSource will automatically reconnect
+    };
+
+    // Cleanup: close connection when component unmounts or user logs out
+    return () => {
+      console.log('SSE: Closing connection');
+      eventSource.close();
+    };
+  }, [isAuthenticated]); // Re-run when authentication status changes
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

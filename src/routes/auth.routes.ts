@@ -71,7 +71,14 @@ router.post('/register', async (req: Request, res: Response) => {
             role: 'user'
         });
 
-        // Set refresh token as HTTP-only cookie
+        // Set both access token and refresh token as HTTP-only cookies
+        res.cookie('accessToken', tokens.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+        
         res.cookie('refreshToken', tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -153,7 +160,14 @@ router.post('/login', async (req: Request, res: Response) => {
             role: user.role
         });
 
-        // Set refresh token as HTTP-only cookie
+        // Set both access token and refresh token as HTTP-only cookies
+        res.cookie('accessToken', tokens.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+        
         res.cookie('refreshToken', tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -190,7 +204,8 @@ router.post('/login', async (req: Request, res: Response) => {
  */
 router.post('/logout', authenticateUser, (req: Request, res: Response) => {
     try {
-        // Clear refresh token cookie
+        // Clear both access token and refresh token cookies
+        res.clearCookie('accessToken');
         res.clearCookie('refreshToken');
 
         logger.info('User logged out', { userId: req.user?.userId });
@@ -226,6 +241,7 @@ router.post('/refresh', (req: Request, res: Response) => {
         // Verify refresh token
         const payload = authService.verifyRefreshToken(refreshToken);
         if (!payload) {
+            res.clearCookie('accessToken');
             res.clearCookie('refreshToken');
             return res.status(401).json({ 
                 error: 'Invalid refresh token', 
@@ -236,6 +252,7 @@ router.post('/refresh', (req: Request, res: Response) => {
         // Check if user still exists and is active
         const user = db.getUserById(payload.userId);
         if (!user || !user.isActive) {
+            res.clearCookie('accessToken');
             res.clearCookie('refreshToken');
             return res.status(401).json({ 
                 error: 'User not found', 
@@ -250,7 +267,14 @@ router.post('/refresh', (req: Request, res: Response) => {
             role: user.role
         });
 
-        // Update refresh token cookie
+        // Update both access token and refresh token cookies
+        res.cookie('accessToken', tokens.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+        
         res.cookie('refreshToken', tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',

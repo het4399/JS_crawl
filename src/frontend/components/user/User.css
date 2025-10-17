@@ -87,11 +87,12 @@
 }
 
 .stat-card {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    backdrop-filter: blur(10px);
     padding: 1.5rem;
     border-radius: 12px;
     text-align: center;
-    border: 1px solid rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.3);
     transition: all 0.3s;
 }
 

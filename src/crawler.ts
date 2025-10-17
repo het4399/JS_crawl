@@ -43,6 +43,7 @@ type CrawlOptions = {
     denyParamPrefixes: string[];
     mode?: 'html';
     scheduleId?: number;
+    userId?: number;
     runAudits?: boolean;
     auditDevice?: 'mobile' | 'desktop';
     captureLinkDetails?: boolean;
@@ -69,7 +70,7 @@ export function resetAuditCancellation(): void {
 }
 
 export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, metricsCollector?: MetricsCollector): Promise<void> {
-    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, scheduleId, runAudits = false, auditDevice = 'desktop', captureLinkDetails = false } = options;
+    const { startUrl, allowSubdomains, maxConcurrency, perHostDelayMs, denyParamPrefixes, scheduleId, userId, runAudits = false, auditDevice = 'desktop', captureLinkDetails = false } = options;
     const { onLog, onPage, onDone, onAuditStart, onAuditComplete, onAuditResults } = events;
     const logger = Logger.getInstance();
     const db = getDatabase();
@@ -105,6 +106,7 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             maxConcurrency,
             mode: 'html',
             scheduleId,
+            userId,
             startedAt: new Date().toISOString(),
             totalPages: 0,
             totalResources: 0,

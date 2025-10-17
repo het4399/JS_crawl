@@ -127,6 +127,10 @@ proxy/storage/
 .env.production.local
 .env.test
 
+# Config files with secrets
+aeo-api/config/openai.json
+**/config/openai.json
+
 # ===========================================
 # Development Tools
 # ===========================================

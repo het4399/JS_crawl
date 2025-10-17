@@ -4,6 +4,7 @@ import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { Logger } from '../logging/Logger.js';
 import { RequestQueue } from 'crawlee';
 import { getDatabase } from '../database/DatabaseService.js';
+import { authenticateUser, optionalAuth } from '../auth/authMiddleware.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -11,6 +12,14 @@ const router = Router();
 const healthChecker = new HealthChecker();
 const metricsCollector = new MetricsCollector();
 const logger = Logger.getInstance();
+
+// Helper function to verify session ownership
+function verifySessionOwnership(sessionId: number, userId: number, db: any): boolean {
+  const session = db.getCrawlSessionById(sessionId);
+  if (!session) return false;
+  // Admin can access all sessions
+  return session.userId === userId || session.userId === undefined || session.userId === null;
+}
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -291,12 +300,18 @@ router.get('/data/check', async (req, res) => {
 });
 
 // List all data (pages and resources)
-router.get('/data/list', async (req, res) => {
+router.get('/data/list', authenticateUser, async (req, res) => {
   try {
     const db = getDatabase();
     const limit = Math.min(parseInt(req.query.limit as string) || 1000, 5000);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
     const sessionId = req.query.sessionId ? parseInt(req.query.sessionId as string) : undefined;
+
+    // Verify session ownership if sessionId is provided
+    if (sessionId && req.user && !verifySessionOwnership(sessionId, req.user.userId, db)) {
+      res.status(403).json({ error: 'Access denied to this session' });
+      return;
+    }
 
     // Tag pages so the UI can distinguish them from resources
     const pages = db.getPages(sessionId, limit, offset).map((p: any) => ({ ...p, resourceType: 'page' }));
@@ -355,13 +370,19 @@ router.get('/data/list', async (req, res) => {
 });
 
 // List only pages (exclude resources) with pagination
-router.get('/data/pages', async (req, res) => {
+router.get('/data/pages', authenticateUser, async (req, res) => {
   try {
     const db = getDatabase();
     const limit = Math.min(parseInt(req.query.limit as string) || 1000, 5000);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
     const sessionId = req.query.sessionId ? parseInt(req.query.sessionId as string) : undefined;
     const hostFilter = (req.query.host as string | undefined) || undefined; // optional
+
+    // Verify session ownership if sessionId is provided
+    if (sessionId && req.user && !verifySessionOwnership(sessionId, req.user.userId, db)) {
+      res.status(403).json({ error: 'Access denied to this session' });
+      return;
+    }
 
     let pages = db.getPages(sessionId, limit, offset) as any[];
     if (hostFilter) {
@@ -396,14 +417,15 @@ router.get('/data/pages', async (req, res) => {
 });
 
 // List crawl sessions for filtering in UI
-router.get('/data/sessions', (req, res) => {
+router.get('/data/sessions', authenticateUser, (req, res) => {
   try {
     const db = getDatabase();
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
     const scheduleId = req.query.scheduleId ? parseInt(req.query.scheduleId as string) : undefined;
+    const userId = req.user?.userId; // Filter by authenticated user
 
-    const sessions = db.getCrawlSessions(limit, offset, scheduleId);
+    const sessions = db.getCrawlSessions(limit, offset, scheduleId, userId);
     res.json({ sessions, paging: { limit, offset, count: sessions.length } });
   } catch (error) {
     logger.error('Failed to list sessions', error as Error);
@@ -412,15 +434,17 @@ router.get('/data/sessions', (req, res) => {
 });
 
 // Crawl status for a URL (to inform user about reuse vs recrawl)
-router.get('/crawl/status', (req, res) => {
+// Protected - users can only see their own crawl status
+router.get('/crawl/status', authenticateUser, (req, res) => {
   try {
     const url = req.query.url as string;
     if (!url) return res.status(400).json({ error: 'url query param is required' });
 
     const db = getDatabase();
-    const running = db.getRunningSessionByUrl(url);
-    const latest = db.getLatestSessionByUrl(url);
-    const avgDuration = db.getAverageDurationForUrl(url);
+    const userId = req.user?.userId;
+    const running = db.getRunningSessionByUrl(url, userId);
+    const latest = db.getLatestSessionByUrl(url, userId);
+    const avgDuration = db.getAverageDurationForUrl(url, userId);
 
     res.json({
       url,

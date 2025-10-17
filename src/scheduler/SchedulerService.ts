@@ -172,7 +172,8 @@ export class SchedulerService {
                 perHostDelayMs: 1000,
                 denyParamPrefixes: ['utm_', 'fbclid', 'gclid'],
                 mode: schedule.mode,
-                scheduleId: schedule.id
+                scheduleId: schedule.id,
+                userId: schedule.userId
             }, {
                 onLog: (message) => {
                     this.logger.info(`[Schedule ${schedule.name}] ${message}`);
