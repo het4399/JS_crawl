@@ -6,6 +6,10 @@ Analyzes content for Q&A patterns and answerability
 import re
 from typing import Dict, List
 from bs4 import BeautifulSoup
+try:
+    from .openai_service import OpenAIService
+except ImportError:
+    from openai_service import OpenAIService
 
 class AnswerabilityService:
     """Service for analyzing answerability and Q&A content"""
@@ -22,6 +26,8 @@ class AnswerabilityService:
             r'\b(?:step|process|method|way|approach|technique)\b',
             r'\b(?:first|second|third|next|then|finally|lastly)\b'
         ]
+        
+        self.openai_service = OpenAIService()
     
     def _extract_questions(self, text: str) -> List[Dict[str, str]]:
         """Extract potential questions from text"""
@@ -157,6 +163,18 @@ class AnswerabilityService:
             # Calculate score
             score = self._calculate_answerability_score(questions, answers, faq_structure)
             
+            # AI-Powered Answerability Analysis (NEW)
+            ai_answerability = {}
+            if text_content:
+                # Get AI feedback on answerability
+                ai_answerability = self.openai_service.analyze_answerability(text_content, [q['question'] for q in questions])
+                
+                # Enhance score with AI analysis
+                if ai_answerability and 'ai_answerability_score' in ai_answerability:
+                    ai_score = ai_answerability.get('ai_answerability_score', 0)
+                    # Blend traditional and AI scores (70% traditional, 30% AI)
+                    score = int(score * 0.7 + ai_score * 0.3)
+            
             # Generate recommendations
             recommendations = []
             if len(questions) == 0:
@@ -168,6 +186,15 @@ class AnswerabilityService:
             if len(questions) > len(answers):
                 recommendations.append('Ensure all questions have corresponding answers')
             
+            # Add AI recommendations
+            if ai_answerability and 'recommendations' in ai_answerability:
+                recommendations.extend(ai_answerability['recommendations'])
+            
+            # Add tone analysis
+            tone_analysis = {}
+            if text_content:
+                tone_analysis = self.openai_service.analyze_tone_and_sentiment(text_content)
+            
             return {
                 'score': score,
                 'questions': questions,
@@ -178,7 +205,9 @@ class AnswerabilityService:
                     'answer_count': len(answers),
                     'qa_balance': len(answers) / len(questions) if len(questions) > 0 else 0
                 },
-                'recommendations': recommendations
+                'recommendations': recommendations,
+                'ai_answerability': ai_answerability,  # NEW: AI analysis results
+                'tone_analysis': tone_analysis  # NEW: Tone analysis
             }
             
         except Exception as e:

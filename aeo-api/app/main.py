@@ -4,11 +4,34 @@ from pydantic import ValidationError
 import uvicorn
 import os
 import asyncio
+import json
 from concurrent.futures import ProcessPoolExecutor
 
 from .models import ExtractHtmlRequest, ExtractResponse
 from .extract import extract_keywords_from_html
 from .utils import init_nlp
+
+# Load OpenAI configuration FIRST (before importing services that use it)
+def load_openai_config():
+    """Load OpenAI configuration from config file"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'openai.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                openai_config = config.get('openai', {})
+                # Set environment variables for OpenAI service
+                if 'api_key' in openai_config:
+                    os.environ['OPENAI_API_KEY'] = openai_config['api_key']
+                return openai_config
+    except Exception as e:
+        print(f"Warning: Could not load OpenAI config: {e}")
+    return {}
+
+# Load configuration BEFORE importing routes
+openai_config = load_openai_config()
+
+# Now import routes (after OpenAI config is loaded)
 from .routes import aeo
 
 # Initialize spaCy model

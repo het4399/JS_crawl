@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './index.css';
 import './App.css';
-import ResultsDisplay from './components/crawler/ResultsDisplay';
-import DataViewer from './components/crawler/DataViewer';
-import LinkExplorer from './components/crawler/LinkExplorer';
-import WebTree from './components/crawler/FixedWebTree';
-import ScheduleList from './components/scheduler/ScheduleList';
-import AuditsPage from './components/audit/AuditsPage';
-import SeoQueueManager from './components/seo/SeoQueueManager';
+import AEODashboard from './components/aeo/AEODashboard';
 import { apiService, AnalysisResult } from './api';
 
 
@@ -36,12 +30,6 @@ const App: React.FC = () => {
     pagesPerSecond: number;
   } | null>(null);
 
-  // Analysis tools state
-  const [activeView, setActiveView] = useState<'metrics' | 'data' | 'links' | 'tree' | 'schedules' | 'audits' | 'seo-queue'>('metrics');
-  const [showDataViewer, setShowDataViewer] = useState(false);
-  const [showLinkExplorer, setShowLinkExplorer] = useState(false);
-  const [showWebTree, setShowWebTree] = useState(false);
-  const [initialViewerSessionId, setInitialViewerSessionId] = useState<number | null>(null);
 
   // Audit results state
   const [auditResults, setAuditResults] = useState<any[]>([]);
@@ -230,7 +218,7 @@ const App: React.FC = () => {
 
         {/* Input Form */}
         <form onSubmit={(e) => { e.preventDefault(); checkAndMaybePrompt(); }} className="max-w-4xl mx-auto mb-8">
-          <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
             <div className="flex gap-4 mb-4">
               <div className="flex-1">
                 <input
@@ -238,7 +226,7 @@ const App: React.FC = () => {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="Enter website URL (e.g., https://example.com)"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                   disabled={loading}
                   required
                 />
@@ -246,7 +234,7 @@ const App: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading || !url.trim()}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-lg transition-all"
               >
                 {loading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -264,23 +252,23 @@ const App: React.FC = () => {
                 id="runCrawl"
                 checked={runCrawl}
                 onChange={(e) => setRunCrawl(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
                 disabled={loading}
               />
-              <label htmlFor="runCrawl" className="text-sm font-medium text-gray-700">
+              <label htmlFor="runCrawl" className="text-sm font-medium text-gray-300">
                 🕷️ Run Crawl (Analyze multiple pages)
               </label>
         </div>
 
             {/* Analysis Options */}
             {runCrawl && (
-              <div className="border-t pt-4">
+              <div className="border-t border-gray-700 pt-4">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">📊 Analysis Options</h3>
+                  <h3 className="text-lg font-semibold text-white">📊 Analysis Options</h3>
           <button
                     type="button"
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="text-sm text-purple-400 hover:text-purple-300 font-medium transition-colors"
                   >
                     {showAdvanced ? 'Hide' : 'Show'} Advanced Options
           </button>
@@ -295,10 +283,10 @@ const App: React.FC = () => {
                           type="checkbox"
                           checked={allowSubdomains}
                           onChange={(e) => setAllowSubdomains(e.target.checked)}
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
                           disabled={loading}
                         />
-                        <span className="text-sm text-gray-700">🌐 Allow Subdomains</span>
+                        <span className="text-sm text-gray-300">🌐 Allow Subdomains</span>
                       </label>
 
                       <label className="flex items-center gap-2">
@@ -306,10 +294,10 @@ const App: React.FC = () => {
                         type="checkbox"
                         checked={runAudits}
                         onChange={(e) => setRunAudits(e.target.checked)}
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
                           disabled={loading}
                       />
-                        <span className="text-sm text-gray-700">🔍 Run Performance Audits</span>
+                        <span className="text-sm text-gray-300">🔍 Run Performance Audits</span>
                     </label>
 
                       <label className="flex items-center gap-2">
@@ -317,23 +305,23 @@ const App: React.FC = () => {
                         type="checkbox"
                         checked={captureLinkDetails}
                         onChange={(e) => setCaptureLinkDetails(e.target.checked)}
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
                           disabled={loading}
                       />
-                        <span className="text-sm text-gray-700">🔗 Link Analysis</span>
+                        <span className="text-sm text-gray-300">🔗 Link Analysis</span>
                     </label>
                 </div>
 
                     {/* Audit Device Selection */}
                 {runAudits && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
                         Audit Device:
                         </label>
                         <select
                           value={auditDevice}
                           onChange={(e) => setAuditDevice(e.target.value as 'mobile' | 'desktop')}
-                          className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full md:w-auto px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                           disabled={loading}
                         >
                           <option value="desktop">Desktop</option>
@@ -370,128 +358,30 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Tab Navigation */}
+        {/* AEO Dashboard - Main Interface */}
         {result && (
           <div className="max-w-7xl mx-auto mb-8">
-            <div className="bg-gray-800 rounded-lg shadow-lg p-6">
-              <div className="flex flex-wrap gap-2 mb-6">
-                <button
-                  onClick={() => setActiveView('metrics')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'metrics'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  📊 AEO Metrics
-                </button>
-                <button
-                  onClick={() => setActiveView('data')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'data'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  📋 Crawled Data
-                </button>
-                <button
-                  onClick={() => setActiveView('links')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'links'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  🔗 Link Analysis
-                </button>
-                <button
-                  onClick={() => setActiveView('tree')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'tree'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  🌳 Site Structure
-                </button>
-                <button
-                  onClick={() => setActiveView('audits')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'audits'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  🔍 Performance Audits
-                </button>
-              <button
-                  onClick={() => setActiveView('schedules')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'schedules'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  📅 Schedules
-              </button>
-                <button
-                  onClick={() => setActiveView('seo-queue')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === 'seo-queue'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  🔍 SEO Queue
-                </button>
-              </div>
-
-              {/* Tab Content */}
-              {activeView === 'metrics' && <ResultsDisplay result={result} />}
-              {activeView === 'data' && (
-                <div className="text-center py-8">
-              <button
-                onClick={() => setShowDataViewer(true)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                    📊 Open Data Viewer
-              </button>
-                </div>
-              )}
-              {activeView === 'links' && (
-                <div className="text-center py-8">
-              <button
-                    onClick={() => setShowLinkExplorer(true)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    🔗 Open Link Explorer
-              </button>
-                </div>
-              )}
-              {activeView === 'tree' && (
-                <div className="text-center py-8">
-              <button
-                onClick={() => setShowWebTree(true)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                    🌳 Open Site Structure
-              </button>
-                </div>
-              )}
-              {activeView === 'schedules' && <ScheduleList />}
-              {activeView === 'audits' && <AuditsPage />}
-              {activeView === 'seo-queue' && (
-                <SeoQueueManager onClose={() => setActiveView('metrics')} />
-              )}
-            </div>
-            </div>
+            <AEODashboard 
+              url={url} 
+              result={result}
+              runCrawl={runCrawl}
+              isCrawling={isCrawling}
+              pageCount={pageCount}
+              crawlStats={crawlStats}
+              logs={logs}
+              discoveredPages={pages}
+              onStopCrawl={() => {
+                fetch('/crawl/stop', { method: 'POST' });
+                setIsCrawling(false);
+              }}
+            />
+          </div>
         )}
 
         {/* Audit results now live under the dedicated "Performance Audits" tab */}
 
-        {/* Crawler Section - Below Metrics */}
-        {runCrawl && (isCrawling || pageCount > 0) && (
+        {/* Crawler Section - Now integrated into AEO Dashboard tabs */}
+        {false && runCrawl && (isCrawling || pageCount > 0) && (
           <div className="max-w-7xl mx-auto mb-8">
             <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
@@ -524,11 +414,11 @@ const App: React.FC = () => {
                 {crawlStats && (
                   <>
                     <div>
-                      <span className="text-2xl font-bold text-white">{crawlStats.duration.toFixed(1)}s</span>
+                      <span className="text-2xl font-bold text-white">{crawlStats?.duration.toFixed(1)}s</span>
                       <div className="text-sm text-gray-300">Duration</div>
                     </div>
                     <div>
-                      <span className="text-2xl font-bold text-white">{crawlStats.pagesPerSecond.toFixed(1)}</span>
+                      <span className="text-2xl font-bold text-white">{crawlStats?.pagesPerSecond.toFixed(1)}</span>
                       <div className="text-sm text-gray-300">Pages/Sec</div>
                     </div>
                   </>
@@ -588,25 +478,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Modal Components */}
-      {showDataViewer && (
-          <DataViewer 
-            onClose={() => setShowDataViewer(false)} 
-            initialSessionId={initialViewerSessionId} 
-          />
-      )}
-
-      {showLinkExplorer && (
-        <LinkExplorer 
-          onClose={() => setShowLinkExplorer(false)} 
-        />
-      )}
-
-      {showWebTree && (
-          <WebTree 
-            onClose={() => setShowWebTree(false)} 
-          />
-      )}
 
         {/* Reuse Prompt Modal (like original crawler) */}
       {showReusePrompt && (
@@ -649,10 +520,8 @@ const App: React.FC = () => {
                     <button 
                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                       onClick={async () => {
-                  setShowReusePrompt(false);
-                  const runningId = recentStatus?.running?.id ?? null;
-                  setInitialViewerSessionId(runningId);
-                  setShowDataViewer(true);
+                        setShowReusePrompt(false);
+                        // TODO: Implement view current run functionality
                       }}
                     >
                       📡 View Current Run
@@ -662,10 +531,8 @@ const App: React.FC = () => {
                       <button 
                         className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                         onClick={async () => {
-                    setShowReusePrompt(false);
-                    const lastId = recentStatus?.latest?.id ?? null;
-                    setInitialViewerSessionId(lastId);
-                    setShowDataViewer(true);
+                          setShowReusePrompt(false);
+                          // TODO: Implement view last results functionality
                         }}
                       >
                         📊 View Last Results

@@ -7,6 +7,10 @@ import re
 import requests
 from urllib.parse import urljoin, urlparse
 from typing import Dict, List, Tuple
+try:
+    from .openai_service import OpenAIService
+except ImportError:
+    from openai_service import OpenAIService  
 # import extruct  # Temporarily disabled due to compatibility issues
 
 class AIPresenceService:
@@ -21,6 +25,7 @@ class AIPresenceService:
             ('CCBot', re.compile(r'(?i)ccbot')),
             ('bingbot', re.compile(r'(?i)bingbot')),
         ]
+        self.openai_service = OpenAIService()
     
     def _fetch_text(self, url: str, timeout: int = 8) -> str:
         """Fetch text content from URL"""
@@ -160,14 +165,41 @@ class AIPresenceService:
             # homepage html and json-ld
             html = self._fetch_text(url, timeout=10)
             jsonld = []
-            # Temporarily disabled extruct due to compatibility issues
-            # try:
-            #     if html:
-            #         jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
-            # except Exception:
-            #     jsonld = []
+            
+            # Basic JSON-LD extraction (replacement for extruct)
+            if html:
+                import json
+                import re
+                
+                # Find all script tags with type="application/ld+json"
+                script_pattern = r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
+                matches = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
+                
+                for match in matches:
+                    try:
+                        # Clean the JSON content
+                        json_content = match.strip()
+                        if json_content:
+                            parsed = json.loads(json_content)
+                            if isinstance(parsed, list):
+                                jsonld.extend(parsed)
+                            else:
+                                jsonld.append(parsed)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
             
             content_checks = self._extract_org_and_meta(html or '', jsonld)
+            
+            # AI Content Understanding Analysis
+            ai_understanding = {}
+            if html:
+                # Extract text content for AI analysis
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html, 'html.parser')
+                text_content = soup.get_text()
+                
+                # Get AI understanding analysis
+                ai_understanding = self.openai_service.analyze_content_understanding(text_content, url)
 
             # Scoring
             score = 0
@@ -211,6 +243,11 @@ class AIPresenceService:
                     content_schemas.add(t)
             if any(s in content_schemas for s in ('Product', 'FAQPage', 'Article', 'BlogPosting')):
                 score += 15
+            
+            # 20 pts AI Content Understanding (NEW)
+            if ai_understanding and 'score' in ai_understanding:
+                ai_score = ai_understanding.get('score', 0)
+                score += min(20, ai_score // 5)  # Convert 0-100 to 0-20 points
 
             score = max(0, min(100, score))
 
@@ -234,6 +271,10 @@ class AIPresenceService:
                 recs.append('Add Open Graph meta tags')
             if not content_checks.get('twitter_card_present'):
                 recs.append('Add Twitter Card meta tags')
+            
+            # Add AI understanding recommendations
+            if ai_understanding and 'recommendations' in ai_understanding:
+                recs.extend(ai_understanding['recommendations'])
 
             explanation_bits = []
             explanation_bits.append('Robots allow major AI bots' if all(robots_checks.get(f'robots_{label.lower()}', True) for label, _ in self.ai_bot_agents) else 'Some AI bots are blocked in robots.txt')
@@ -241,12 +282,17 @@ class AIPresenceService:
             explanation_bits.append('Organization schema detected' if content_checks.get('org_schema_present') else 'Organization schema missing')
             explanation_bits.append('Wikidata/Wikipedia present in sameAs' if content_checks.get('sameas_wikidata_or_wikipedia') else 'Wikidata/Wikipedia missing in sameAs')
             explanation_bits.append('OG/Twitter tags present' if (content_checks.get('open_graph_present') and content_checks.get('twitter_card_present')) else 'OG/Twitter tags incomplete')
+            
+            # Add AI understanding explanation
+            if ai_understanding and 'understanding_level' in ai_understanding:
+                explanation_bits.append(f'AI understanding: {ai_understanding["understanding_level"]}')
 
             return {
                 'score': score,
                 'explanation': '; '.join(explanation_bits),
                 'checks': {**robots_checks, **content_checks},
-                'recommendations': recs
+                'recommendations': recs,
+                'ai_understanding': ai_understanding  # NEW: Include AI analysis results
             }
         except Exception as e:
             return {

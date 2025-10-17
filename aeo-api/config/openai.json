@@ -1,0 +1,9 @@
+{
+  "openai": {
+    "api_key": "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",
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 1000,
+    "temperature": 0.3,
+    "timeout": 30
+  }
+}

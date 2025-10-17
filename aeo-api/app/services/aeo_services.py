@@ -96,11 +96,28 @@ class AIPresenceService:
             # homepage html and json-ld
             html = self._fetch_text(url, timeout=10)
             jsonld = []
-            try:
-                if html:
-                    jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
-            except Exception:
-                jsonld = []
+            
+            # Basic JSON-LD extraction (replacement for extruct)
+            if html:
+                import json
+                import re
+                
+                # Find all script tags with type="application/ld+json"
+                script_pattern = r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
+                matches = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
+                
+                for match in matches:
+                    try:
+                        # Clean the JSON content
+                        json_content = match.strip()
+                        if json_content:
+                            parsed = json.loads(json_content)
+                            if isinstance(parsed, list):
+                                jsonld.extend(parsed)
+                            else:
+                                jsonld.append(parsed)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
             
             # Extract organization schema and meta information
             content_checks = self._extract_org_and_meta(html or '', jsonld)
