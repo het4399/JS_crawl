@@ -42,7 +42,7 @@ app.use('/api', auditsRoutes);
 app.use(seoRoutes);
 app.use(seoRedisQueueRoutes);
 app.use(linksRoutes);
-app.use(aeoRoutes);
+app.use('/aeo', aeoRoutes);
 
 // Cancel audits endpoint - moved before static file serving
 // app.post('/cancel-audits', (req, res) => {

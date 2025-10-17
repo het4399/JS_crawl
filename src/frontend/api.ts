@@ -1,4 +1,4 @@
-const API_BASE_URL = '/aeo';
+const API_BASE_URL = '';
 
 export interface AnalysisResult {
   success: boolean;

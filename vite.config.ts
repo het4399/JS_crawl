@@ -13,7 +13,6 @@ export default defineConfig({
         target: 'http://localhost:3004',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path.replace(/^\/aeo/, ''),
         timeout: 60000,
       },
       '/api': {
