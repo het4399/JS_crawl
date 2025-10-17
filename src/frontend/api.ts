@@ -82,7 +82,7 @@ class ApiService {
         console.log(`Getting AEO analysis for: ${url}`);
         
         const aeoResponse = await fetch(
-          `${this.baseURL}/analyze`,
+          `${this.baseURL}/aeo/analyze`,
           {
             method: 'POST',
             headers: {
@@ -97,14 +97,21 @@ class ApiService {
         }
 
         const aeoData = await aeoResponse.json();
-        return aeoData;
+        console.log('AEO API Response:', aeoData);
+        
+        // Handle the response structure from AEO API
+        if (aeoData.success && aeoData.results) {
+          return aeoData.results;
+        } else {
+          throw new Error(aeoData.error || 'AEO analysis failed');
+        }
       } else {
         // Call the AEO analyzer endpoint for single page analysis
-        console.log(`Making API call to: ${this.baseURL}/analyze`);
+        console.log(`Making API call to: ${this.baseURL}/aeo/analyze`);
         console.log(`Analyzing URL: ${url}`);
 
         const response = await fetch(
-          `${this.baseURL}/analyze`,
+          `${this.baseURL}/aeo/analyze`,
           {
             method: 'POST',
             headers: {
@@ -114,12 +121,18 @@ class ApiService {
           }
         );
 
-        const data = await response.json();
+        if (!response.ok) {
+          throw new Error('AEO analysis failed');
+        }
 
-        if (response.ok) {
-          return data;
+        const data = await response.json();
+        console.log('AEO API Response (single page):', data);
+        
+        // Handle the response structure from AEO API
+        if (data.success && data.results) {
+          return data.results;
         } else {
-          throw new Error(data.error || 'Analysis failed');
+          throw new Error(data.error || 'AEO analysis failed');
         }
       }
     } catch (error: any) {

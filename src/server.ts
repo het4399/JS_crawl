@@ -9,6 +9,7 @@ import { auditsRoutes } from './routes/audits.routes.js';
 import seoRoutes from './routes/seo.routes.js';
 import seoRedisQueueRoutes from './routes/seo-redis-queue.routes.js';
 import linksRoutes from './routes/links.routes.js';
+import aeoRoutes from './routes/aeo.routes.js';
 import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
@@ -41,6 +42,7 @@ app.use('/api', auditsRoutes);
 app.use(seoRoutes);
 app.use(seoRedisQueueRoutes);
 app.use(linksRoutes);
+app.use(aeoRoutes);
 
 // Cancel audits endpoint - moved before static file serving
 // app.post('/cancel-audits', (req, res) => {
@@ -197,175 +199,6 @@ app.get('/api/schedules/:id/stats', (req, res) => {
     }
 });
 
-// AEO Schedule management routes (following original crawler pattern)
-/* Removed: Use existing /api/schedules routes from original crawler */
-/* app.get('/api/aeo-schedules', (req, res) => {
-    try {
-        const db = getDatabase();
-        const schedules = db.getAEOSchedules();
-        res.json({ schedules });
-    } catch (error) {
-        logger.error('Failed to get AEO schedules', error as Error);
-        res.status(500).json({ error: 'Failed to get AEO schedules' });
-    }
-}); */
-
-/* app.post('/api/aeo-schedules', (req, res) => {
-    try {
-        const { 
-            name, 
-            description, 
-            startUrl, 
-            allowSubdomains = true,
-            runAudits = false,
-            auditDevice = 'desktop',
-            captureLinkDetails = false,
-            cronExpression, 
-            enabled = true 
-        } = req.body;
-        
-        // Validate required fields
-        if (!name || !description || !startUrl || !cronExpression) {
-            return res.status(400).json({ 
-                error: 'Missing required fields: name, description, startUrl, cronExpression' 
-            });
-        }
-        
-        // Validate URL format
-        const urlPattern = /^https?:\/\/.+/;
-        if (!urlPattern.test(startUrl)) {
-            return res.status(400).json({ error: 'Invalid URL format' });
-        }
-        
-        // Validate audit device
-        if (!['mobile', 'desktop'].includes(auditDevice)) {
-            return res.status(400).json({ error: 'auditDevice must be either "mobile" or "desktop"' });
-        }
-        
-        const db = getDatabase();
-        const scheduleId = db.insertAEOSchedule({
-            name,
-            description,
-            startUrl,
-            allowSubdomains,
-            runAudits,
-            auditDevice,
-            captureLinkDetails,
-            cronExpression,
-            enabled,
-            createdAt: new Date().toISOString(),
-            totalRuns: 0,
-            successfulRuns: 0,
-            failedRuns: 0
-        });
-        
-        res.status(201).json({ 
-            id: scheduleId, 
-            message: 'AEO schedule created successfully' 
-        });
-    } catch (error) {
-        logger.error('Failed to create AEO schedule', error as Error);
-        res.status(400).json({ error: (error as Error).message });
-    }
-}); */
-
-/* app.get('/api/aeo-schedules/:id', (req, res) => {
-    try {
-        const db = getDatabase();
-        const schedule = db.getAEOSchedule(parseInt(req.params.id));
-        if (!schedule) {
-            return res.status(404).json({ error: 'AEO schedule not found' });
-        }
-        res.json({ schedule });
-    } catch (error) {
-        logger.error('Failed to get AEO schedule', error as Error);
-        res.status(500).json({ error: 'Failed to get AEO schedule' });
-    }
-}); */
-
-/* app.put('/api/aeo-schedules/:id', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const updates = req.body;
-        
-        // Validate audit device if provided
-        if (updates.auditDevice && !['mobile', 'desktop'].includes(updates.auditDevice)) {
-            return res.status(400).json({ error: 'auditDevice must be either "mobile" or "desktop"' });
-        }
-        
-        // Validate URL if provided
-        if (updates.startUrl) {
-            const urlPattern = /^https?:\/\/.+/;
-            if (!urlPattern.test(updates.startUrl)) {
-                return res.status(400).json({ error: 'Invalid URL format' });
-            }
-        }
-        
-        const db = getDatabase();
-        db.updateAEOSchedule(id, updates);
-        res.json({ message: 'AEO schedule updated successfully' });
-    } catch (error) {
-        logger.error('Failed to update AEO schedule', error as Error);
-        res.status(400).json({ error: (error as Error).message });
-    }
-}); */
-
-/* app.delete('/api/aeo-schedules/:id', (req, res) => {
-    try {
-        const db = getDatabase();
-        db.deleteAEOSchedule(parseInt(req.params.id));
-        res.json({ message: 'AEO schedule deleted successfully' });
-    } catch (error) {
-        logger.error('Failed to delete AEO schedule', error as Error);
-        res.status(500).json({ error: 'Failed to delete AEO schedule' });
-    }
-}); */
-
-/* app.post('/api/aeo-schedules/:id/toggle', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const db = getDatabase();
-        const schedule = db.getAEOSchedule(id);
-        
-        if (!schedule) {
-            return res.status(404).json({ error: 'AEO schedule not found' });
-        }
-        
-        db.updateAEOSchedule(id, { enabled: !schedule.enabled });
-        res.json({ message: 'AEO schedule toggled successfully' });
-    } catch (error) {
-        logger.error('Failed to toggle AEO schedule', error as Error);
-        res.status(500).json({ error: 'Failed to toggle AEO schedule' });
-    }
-}); */
-
-/* app.get('/api/aeo-schedules/:id/stats', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const db = getDatabase();
-        const schedule = db.getAEOSchedule(id);
-        
-        if (!schedule) {
-            return res.status(404).json({ error: 'AEO schedule not found' });
-        }
-        
-        const stats = {
-            totalRuns: schedule.totalRuns,
-            successfulRuns: schedule.successfulRuns,
-            failedRuns: schedule.failedRuns,
-            successRate: schedule.totalRuns > 0 ? (schedule.successfulRuns / schedule.totalRuns) * 100 : 0,
-            averageAeoScore: schedule.averageAeoScore,
-            lastAeoScore: schedule.lastAeoScore,
-            lastRun: schedule.lastRun,
-            nextRun: schedule.nextRun
-        };
-        
-        res.json({ stats });
-    } catch (error) {
-        logger.error('Failed to get AEO schedule stats', error as Error);
-        res.status(500).json({ error: 'Failed to get AEO schedule stats' });
-    }
-}); */
 
 app.get('/api/scheduler/status', (req, res) => {
     try {

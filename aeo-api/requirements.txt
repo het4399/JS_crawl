@@ -6,5 +6,7 @@ readability-lxml==0.8.1
 langdetect==1.0.9
 pydantic==2.5.0
 python-multipart==0.0.6
-lxml[html_clean]
+lxml==4.9.3
+requests==2.31.0
+# extruct==0.12.0  # Temporarily disabled due to compatibility issues
 

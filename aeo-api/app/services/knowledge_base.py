@@ -48,11 +48,9 @@ class KnowledgeBaseService:
         
         word_count = len(text.split())
         return (total_facts / word_count * 100) if word_count > 0 else 0
-
+    
     def _extract_facts(self, text: str) -> List[Dict[str, str]]:
-        """Extract candidate factual statements (simple heuristic).
-        Select sentences that contain numbers, dates, percentages, or fact indicators.
-        """
+        """Extract candidate factual statements (simple heuristic)."""
         # Split into sentences crudely
         sentences = re.split(r'[.!?]+\s+', text)
         sentences = [s.strip() for s in sentences if s and len(s.strip()) > 0]

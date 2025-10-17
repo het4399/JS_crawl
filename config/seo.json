@@ -4,6 +4,7 @@
   "retries": 2,
   "backoffBaseMs": 1000,
   "pythonApiBase": "http://localhost:8000",
+  "cacheExpirationHours": 168,
   "urlEligibility": {
     "httpsOnly": true,
     "sameOriginOnly": true,

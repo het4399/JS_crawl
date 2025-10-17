@@ -7,8 +7,7 @@ import re
 import requests
 from urllib.parse import urljoin, urlparse
 from typing import Dict, List, Tuple
-import extruct
-from app.config import Config
+# import extruct  # Temporarily disabled due to compatibility issues
 
 class AIPresenceService:
     """Service for analyzing AI presence and accessibility"""
@@ -137,7 +136,6 @@ class AIPresenceService:
                 major_count += 1
             if 'wikidata.org' in host or 'wikipedia.org' in host:
                 checks['sameas_wikidata_or_wikipedia'] = True
-                print(f"🎯 Wikipedia/Wikidata detected in sameAs: {link} -> Awarding 20 points")
         
         checks['sameas_major_profiles_count'] = major_count
 
@@ -162,11 +160,12 @@ class AIPresenceService:
             # homepage html and json-ld
             html = self._fetch_text(url, timeout=10)
             jsonld = []
-            try:
-                if html:
-                    jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
-            except Exception:
-                jsonld = []
+            # Temporarily disabled extruct due to compatibility issues
+            # try:
+            #     if html:
+            #         jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
+            # except Exception:
+            #     jsonld = []
             
             content_checks = self._extract_org_and_meta(html or '', jsonld)
 

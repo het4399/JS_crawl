@@ -9,6 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 from .models import ExtractHtmlRequest, ExtractResponse
 from .extract import extract_keywords_from_html
 from .utils import init_nlp
+from .routes import aeo
 
 # Initialize spaCy model
 init_nlp()
@@ -30,10 +31,13 @@ def _extract_task(html: str, url: str, final_url: str, lang_guess: str):
     )
 
 app = FastAPI(
-    title="SEO Keyword Extractor API",
-    description="Extract SEO keywords from HTML with hierarchical structure",
+    title="SEO Analysis API",
+    description="SEO keyword extraction and AEOCHECKER analysis",
     version="1.0.0"
 )
+
+# Include AEOCHECKER routes
+app.include_router(aeo.router)
 
 # Add CORS middleware
 app.add_middleware(

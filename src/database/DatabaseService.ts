@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { Logger } from '../logging/Logger.js';
-import { AEOSchedule, AEOExecution } from '../scheduler/AEOScheduleManager.js';
+import fs from 'fs';
+import path from 'path';
 
 export interface CrawlSession {
     id: number;
@@ -126,6 +127,39 @@ export interface AuditExecution {
     urlsSuccessful: number;
     urlsFailed: number;
     duration: number;
+}
+
+export interface AEOSchedule {
+    id: number;
+    name: string;
+    description: string;
+    startUrl: string;
+    allowSubdomains: boolean;
+    runAudits: boolean;
+    auditDevice: 'mobile' | 'desktop';
+    captureLinkDetails: boolean;
+    cronExpression: string;
+    enabled: boolean;
+    createdAt: string;
+    lastRun?: string;
+    nextRun?: string;
+    totalRuns: number;
+    successfulRuns: number;
+    failedRuns: number;
+    lastAeoScore?: number;
+    averageAeoScore?: number;
+}
+
+export interface AEOExecution {
+    id: number;
+    scheduleId: number;
+    startedAt: string;
+    completedAt?: string;
+    status: 'running' | 'completed' | 'failed';
+    pagesAnalyzed: number;
+    averageAeoScore?: number;
+    duration?: number;
+    errorMessage?: string;
 }
 
 export class DatabaseService {
@@ -1738,13 +1772,27 @@ export class DatabaseService {
     }
 
     // SEO Cache Methods
+    private loadSeoConfig(): { cacheExpirationHours: number } {
+        const SEO_CONFIG_PATH = path.resolve(process.cwd(), 'config', 'seo.json');
+        try {
+            const config = JSON.parse(fs.readFileSync(SEO_CONFIG_PATH, 'utf-8'));
+            return {
+                cacheExpirationHours: config.cacheExpirationHours || 168 // Default to 7 days (168 hours)
+            };
+        } catch (error) {
+            console.warn('SEO config not found, using default cache expiration of 168 hours (7 days)');
+            return { cacheExpirationHours: 168 };
+        }
+    }
+
     async cacheSeoData(url: string, seoData: {
         parentText?: string;
         keywords: Array<{ text: string; score: number; intent?: string }>;
         language?: string;
     }): Promise<void> {
         const now = new Date().toISOString();
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+        const seoConfig = this.loadSeoConfig();
+        const expiresAt = new Date(Date.now() + seoConfig.cacheExpirationHours * 60 * 60 * 1000).toISOString();
         
         const stmt = this.db.prepare(`
             INSERT OR REPLACE INTO seo_cache 

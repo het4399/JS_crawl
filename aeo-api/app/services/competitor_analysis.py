@@ -6,14 +6,13 @@ Analyzes competitor pages and compares with target URL
 import re
 import requests
 from typing import Dict, List
-import extruct
-from app.config import Config
+# import extruct  # Temporarily disabled due to compatibility issues
 
 class CompetitorAnalysisService:
     """Service for analyzing competitor landscape"""
     
     def __init__(self):
-        self.max_competitors = Config.MAX_COMPETITORS
+        self.max_competitors = 5
     
     def _fetch_text(self, url: str, timeout: int = 10) -> str:
         """Fetch text content from URL"""
@@ -37,10 +36,11 @@ class CompetitorAnalysisService:
             
             # Extract schema markup
             jsonld = []
-            try:
-                jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
-            except Exception:
-                pass
+            # Temporarily disabled extruct due to compatibility issues
+            # try:
+            #     jsonld = extruct.extract(html, base_url=url).get('json-ld') or []
+            # except Exception:
+            #     pass
             
             # Extract meta information
             title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
@@ -102,15 +102,6 @@ class CompetitorAnalysisService:
             avg_competitor_schemas = sum(competitor_schema_counts) / len(competitor_schema_counts) if competitor_schema_counts else 0
             schema_advantage = target_schema_count - avg_competitor_schemas
             
-            # Schema type analysis
-            all_competitor_schema_types = []
-            for c in competitor_data:
-                if 'error' not in c:
-                    all_competitor_schema_types.extend(c.get('schema_types', []))
-            
-            unique_schema_types = list(set(all_competitor_schema_types))
-            target_schema_types = target_data.get('schema_types', [])
-            
             # Calculate competitive score
             competitive_score = 0
             if schema_advantage > 0:
@@ -119,6 +110,13 @@ class CompetitorAnalysisService:
                 competitive_score += 15
             
             # Check for unique schema types
+            all_competitor_schema_types = []
+            for c in competitor_data:
+                if 'error' not in c:
+                    all_competitor_schema_types.extend(c.get('schema_types', []))
+            
+            unique_schema_types = list(set(all_competitor_schema_types))
+            target_schema_types = target_data.get('schema_types', [])
             unique_target_schemas = set(target_schema_types) - set(unique_schema_types)
             if unique_target_schemas:
                 competitive_score += 20

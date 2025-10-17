@@ -10,10 +10,10 @@ export default defineConfig({
     },
     proxy: {
       '/aeo': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:3004',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path.replace(/^\/aeo/, '/api'),
+        rewrite: (path) => path.replace(/^\/aeo/, ''),
         timeout: 60000,
       },
       '/api': {
@@ -43,6 +43,20 @@ export default defineConfig({
         target: 'http://localhost:3004',
         changeOrigin: true,
         secure: false,
+        timeout: 60000,
+      },
+      '/aeo-api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/aeo-api/, '/api'),
+        timeout: 60000,
+      },
+      '/aeo-health': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/aeo-health/, '/health'),
         timeout: 60000,
       }
     }

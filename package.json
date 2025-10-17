@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "dev:frontend": "vite",
+    "dev:aeo": "cd aeo-api && python run.py",
     "dev:full": "start \"Backend\" cmd /k \"npm run dev\" && start \"Frontend\" cmd /k \"npm run dev:frontend\"",
+    "dev:all": "start \"Backend\" cmd /k \"npm run dev\" && start \"Frontend\" cmd /k \"npm run dev:frontend\" && start \"AEO API\" cmd /k \"npm run dev:aeo\"",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "build:frontend": "vite build",

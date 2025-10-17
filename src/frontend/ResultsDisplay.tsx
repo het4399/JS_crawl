@@ -1,10 +1,10 @@
 import React from 'react';
 
 interface AnalysisResult {
-  success: boolean;
+  success?: boolean;
   url: string;
-  grade: string;
-  grade_color: string;
+  grade?: string;
+  grade_color?: string;
   overall_score: number;
   module_scores?: {
     ai_presence: number;
@@ -49,15 +49,20 @@ interface ResultsDisplayProps {
 }
 
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result }) => {
+  console.log('ResultsDisplay received result:', result);
+  console.log('Overall score:', result.overall_score);
+  console.log('Module scores:', result.module_scores);
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-400';
-    if (score >= 60) return 'text-yellow-400';
+    const safeScore = isNaN(score) ? 0 : score;
+    if (safeScore >= 80) return 'text-green-400';
+    if (safeScore >= 60) return 'text-yellow-400';
     return 'text-red-400';
   };
 
   const getScoreBgColor = (score: number) => {
-    if (score >= 80) return 'bg-green-900';
-    if (score >= 60) return 'bg-yellow-900';
+    const safeScore = isNaN(score) ? 0 : score;
+    if (safeScore >= 80) return 'bg-green-900';
+    if (safeScore >= 60) return 'bg-yellow-900';
     return 'bg-red-900';
   };
 
@@ -85,7 +90,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result }) => {
                 stroke="url(#gradient)"
                 strokeWidth="8"
                 fill="none"
-                strokeDasharray={`${(Math.round(result.overall_score) / 100) * 283} 283`}
+                strokeDasharray={`${(Math.round(result.overall_score || 0) / 100) * 283} 283`}
                 strokeLinecap="round"
                 className="transition-all duration-1000"
               />
@@ -98,7 +103,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result }) => {
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-2xl font-bold text-white">
-                {Math.round(result.overall_score)}/100
+                {Math.round(result.overall_score || 0)}/100
               </span>
             </div>
           </div>
@@ -107,8 +112,8 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result }) => {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h2 className="text-2xl font-bold text-white">Your Brand</h2>
-              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getScoreBgColor(Math.round(result.overall_score))} ${getScoreColor(Math.round(result.overall_score))}`}>
-                {result.grade}
+              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getScoreBgColor(Math.round(result.overall_score || 0))} ${getScoreColor(Math.round(result.overall_score || 0))}`}>
+                {result.grade || (result.overall_score >= 80 ? 'A' : result.overall_score >= 60 ? 'B' : result.overall_score >= 40 ? 'C' : 'D')}
               </span>
             </div>
             <div className="text-gray-400 text-sm mb-2">
@@ -118,9 +123,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result }) => {
               </a>
             </div>
             <p className="text-gray-300 leading-relaxed">
-              Your website's AEO analysis shows a score of {Math.round(result.overall_score)}. 
-              {Math.round(result.overall_score) >= 80 ? ' Excellent work! Your site is well-optimized for AI search engines.' : 
-               Math.round(result.overall_score) >= 60 ? ' Good foundation, but there are opportunities for improvement.' : 
+              Your website's AEO analysis shows a score of {Math.round(result.overall_score || 0)}. 
+              {Math.round(result.overall_score || 0) >= 80 ? ' Excellent work! Your site is well-optimized for AI search engines.' : 
+               Math.round(result.overall_score || 0) >= 60 ? ' Good foundation, but there are opportunities for improvement.' : 
                ' There are significant areas for improvement to enhance your AI search visibility.'}
             </p>
           </div>
