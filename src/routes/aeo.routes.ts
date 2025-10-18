@@ -45,6 +45,39 @@ router.post('/analyze',
             logger.error('Failed to track AEO usage', error as Error);
         }
         
+        // Save AEO analysis results to database
+        if (data.success && data.results) {
+            try {
+                const result = data.results;
+                const url = req.body.url;
+                
+                // Try to find associated session
+                const latestSession = db.getLatestSessionByUrl(url, userId);
+                
+                db.saveAeoAnalysisResult({
+                    sessionId: latestSession?.id,
+                    url: url,
+                    userId: userId,
+                    grade: result.grade || 'N/A',
+                    gradeColor: result.grade_color || '#666666',
+                    overallScore: result.overall_score || 0,
+                    moduleScores: result.module_scores,
+                    moduleWeights: result.module_weights,
+                    detailedAnalysis: result.detailed_analysis,
+                    structuredData: result.structured_data,
+                    recommendations: result.all_recommendations || result.recommendations,
+                    errors: result.errors,
+                    warnings: result.warnings,
+                    analysisTimestamp: result.analysis_timestamp || new Date().toISOString(),
+                    runId: result.run_id
+                });
+                
+                logger.info('AEO analysis results saved to database', { userId, url });
+            } catch (error) {
+                logger.error('Failed to save AEO analysis results', error as Error);
+            }
+        }
+        
         logger.info('AEO analysis completed successfully', { userId });
         res.json(data);
     } catch (error) {

@@ -209,6 +209,36 @@ class ApiService {
       throw new Error('Health check failed - backend may not be running');
     }
   }
+
+  async getSessionData(sessionId: number): Promise<{
+    data: any[];
+    totalPages: number;
+    totalResources: number;
+    session?: any;
+    logs?: Array<{ id: number; message: string; level: string; timestamp: string }>;
+  }> {
+    try {
+      const response = await fetch(`${this.baseURL}/api/data/list?sessionId=${sessionId}`, {
+        headers: this.getAuthHeaders(),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('accessToken');
+          window.location.href = '/login';
+          throw new Error('Please login to continue');
+        }
+        throw new Error('Failed to fetch session data');
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error('Get session data error:', error);
+      throw new Error(error.message || 'Failed to fetch session data');
+    }
+  }
 }
 
 export const apiService = new ApiService();

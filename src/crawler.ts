@@ -121,10 +121,20 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
         throw error;
     }
 
+    // Helper function to log and save to database
+    const logAndSave = (message: string, level: string = 'info') => {
+        onLog?.(message);
+        try {
+            db.saveCrawlLog(sessionId, message, level);
+        } catch (error) {
+            logger.error('Failed to save log to database', error as Error);
+        }
+    };
+
     // Discover sitemaps and add URLs to queue
     const sitemapMsg = 'Discovering sitemaps...';
     log.info(sitemapMsg);
-    onLog?.(sitemapMsg);
+    logAndSave(sitemapMsg);
 
     try {
         const sitemapResult = await SitemapService.discoverSitemaps(startUrl);
@@ -156,16 +166,16 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
 
         const discoveryMsg = `Discovered ${sitemapResult.discoveredUrls.length} URLs from ${sitemapResult.sitemapUrls.length} sitemaps`;
         log.info(discoveryMsg);
-        onLog?.(discoveryMsg);
+        logAndSave(discoveryMsg);
 
         if (sitemapResult.errors.length > 0) {
             const errorMsg = `Sitemap discovery errors: ${sitemapResult.errors.join(', ')}`;
-            onLog?.(errorMsg);
+            logAndSave(errorMsg, 'warning');
         }
     } catch (error) {
         const errorMsg = `Sitemap discovery failed: ${error}`;
         log.error(errorMsg);
-        onLog?.(errorMsg);
+        logAndSave(errorMsg, 'error');
     }
 
     // Use a unique queue per session run to avoid reusing handled requests

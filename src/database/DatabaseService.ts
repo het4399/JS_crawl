@@ -488,6 +488,42 @@ export class DatabaseService {
             )
         `);
 
+        // Create AEO analysis results table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS aeo_analysis_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                url TEXT NOT NULL,
+                user_id INTEGER,
+                grade TEXT,
+                grade_color TEXT,
+                overall_score REAL,
+                module_scores TEXT,
+                module_weights TEXT,
+                detailed_analysis TEXT,
+                structured_data TEXT,
+                recommendations TEXT,
+                errors TEXT,
+                warnings TEXT,
+                analysis_timestamp TEXT NOT NULL,
+                run_id TEXT,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        `);
+
+        // Create crawl logs table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS crawl_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                level TEXT DEFAULT 'info',
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id)
+            )
+        `);
+
         // Best-effort additive migrations for existing DBs (ignore errors if columns already exist)
         try { this.db.exec('ALTER TABLE resources ADD COLUMN status_code INTEGER'); } catch {}
         try { this.db.exec('ALTER TABLE resources ADD COLUMN response_time INTEGER'); } catch {}
@@ -531,6 +567,11 @@ export class DatabaseService {
             CREATE INDEX IF NOT EXISTS idx_crawl_schedules_user_id ON crawl_schedules (user_id);
             CREATE INDEX IF NOT EXISTS idx_audit_schedules_user_id ON audit_schedules (user_id);
             CREATE INDEX IF NOT EXISTS idx_aeo_schedules_user_id ON aeo_schedules (user_id);
+            CREATE INDEX IF NOT EXISTS idx_aeo_analysis_results_session_id ON aeo_analysis_results (session_id);
+            CREATE INDEX IF NOT EXISTS idx_aeo_analysis_results_user_id ON aeo_analysis_results (user_id);
+            CREATE INDEX IF NOT EXISTS idx_aeo_analysis_results_url ON aeo_analysis_results (url);
+            CREATE INDEX IF NOT EXISTS idx_crawl_logs_session_id ON crawl_logs (session_id);
+            CREATE INDEX IF NOT EXISTS idx_crawl_logs_timestamp ON crawl_logs (timestamp);
         `);
 
         this.logger.info('Database tables initialized');
@@ -2433,6 +2474,164 @@ export class DatabaseService {
         
         const result = stmt.get(userId, actionType, todayStr) as any;
         return result.count || 0;
+    }
+
+    // AEO Analysis Results Methods
+    saveAeoAnalysisResult(data: {
+        sessionId?: number;
+        url: string;
+        userId?: number;
+        grade: string;
+        gradeColor: string;
+        overallScore: number;
+        moduleScores?: any;
+        moduleWeights?: any;
+        detailedAnalysis?: any;
+        structuredData?: any;
+        recommendations?: string[];
+        errors?: string[];
+        warnings?: string[];
+        analysisTimestamp: string;
+        runId?: string;
+    }): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO aeo_analysis_results 
+            (session_id, url, user_id, grade, grade_color, overall_score, module_scores, module_weights,
+             detailed_analysis, structured_data, recommendations, errors, warnings, analysis_timestamp, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            data.sessionId ?? null,
+            data.url,
+            data.userId ?? null,
+            data.grade,
+            data.gradeColor,
+            data.overallScore,
+            data.moduleScores ? JSON.stringify(data.moduleScores) : null,
+            data.moduleWeights ? JSON.stringify(data.moduleWeights) : null,
+            data.detailedAnalysis ? JSON.stringify(data.detailedAnalysis) : null,
+            data.structuredData ? JSON.stringify(data.structuredData) : null,
+            data.recommendations ? JSON.stringify(data.recommendations) : null,
+            data.errors ? JSON.stringify(data.errors) : null,
+            data.warnings ? JSON.stringify(data.warnings) : null,
+            data.analysisTimestamp,
+            data.runId ?? null
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    getAeoAnalysisResultBySessionId(sessionId: number): any | null {
+        const stmt = this.db.prepare(`
+            SELECT * FROM aeo_analysis_results
+            WHERE session_id = ?
+            ORDER BY analysis_timestamp DESC
+            LIMIT 1
+        `);
+        
+        const row = stmt.get(sessionId) as any;
+        if (!row) return null;
+        
+        return this.parseAeoAnalysisResult(row);
+    }
+
+    getAeoAnalysisResultByUrl(url: string, userId?: number): any | null {
+        let query = `
+            SELECT * FROM aeo_analysis_results
+            WHERE url = ?
+        `;
+        const params: any[] = [url];
+        
+        if (userId) {
+            query += ' AND user_id = ?';
+            params.push(userId);
+        }
+        
+        query += ' ORDER BY analysis_timestamp DESC LIMIT 1';
+        
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(...params) as any;
+        if (!row) return null;
+        
+        return this.parseAeoAnalysisResult(row);
+    }
+
+    getUserCrawlSessionsWithResults(userId: number, limit: number = 50, offset: number = 0): Array<{
+        session: any;
+        aeoResult: any | null;
+    }> {
+        const sessions = this.getCrawlSessions(limit, offset, undefined, userId);
+        
+        return sessions.map(session => {
+            const aeoResult = this.getAeoAnalysisResultBySessionId(session.id);
+            return {
+                session,
+                aeoResult
+            };
+        });
+    }
+
+    private parseAeoAnalysisResult(row: any): any {
+        return {
+            id: row.id,
+            sessionId: row.session_id,
+            url: row.url,
+            userId: row.user_id,
+            grade: row.grade,
+            gradeColor: row.grade_color,
+            overallScore: row.overall_score,
+            moduleScores: row.module_scores ? JSON.parse(row.module_scores) : null,
+            moduleWeights: row.module_weights ? JSON.parse(row.module_weights) : null,
+            detailedAnalysis: row.detailed_analysis ? JSON.parse(row.detailed_analysis) : null,
+            structuredData: row.structured_data ? JSON.parse(row.structured_data) : null,
+            recommendations: row.recommendations ? JSON.parse(row.recommendations) : null,
+            errors: row.errors ? JSON.parse(row.errors) : null,
+            warnings: row.warnings ? JSON.parse(row.warnings) : null,
+            analysisTimestamp: row.analysis_timestamp,
+            runId: row.run_id
+        };
+    }
+
+    // Crawl Logs Methods
+    saveCrawlLog(sessionId: number, message: string, level: string = 'info'): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO crawl_logs (session_id, message, level, timestamp)
+            VALUES (?, ?, ?, ?)
+        `);
+        
+        const result = stmt.run(
+            sessionId,
+            message,
+            level,
+            new Date().toISOString()
+        );
+        
+        return result.lastInsertRowid as number;
+    }
+
+    getCrawlLogs(sessionId: number, limit: number = 1000): Array<{
+        id: number;
+        sessionId: number;
+        message: string;
+        level: string;
+        timestamp: string;
+    }> {
+        const stmt = this.db.prepare(`
+            SELECT * FROM crawl_logs
+            WHERE session_id = ?
+            ORDER BY timestamp ASC
+            LIMIT ?
+        `);
+        
+        const rows = stmt.all(sessionId, limit) as any[];
+        return rows.map(row => ({
+            id: row.id,
+            sessionId: row.session_id,
+            message: row.message,
+            level: row.level,
+            timestamp: row.timestamp
+        }));
     }
 }
 

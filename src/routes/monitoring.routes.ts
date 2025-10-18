@@ -333,9 +333,21 @@ router.get('/data/list', authenticateUser, async (req, res) => {
     const totalPages = db.getPageCount(sessionId);
     const totalResources = db.getResourceCount(sessionId);
     const totalItems = totalPages + totalResources;
+    
+    // Get session details if sessionId is provided
+    let session = null;
+    let logs: any[] = [];
+    if (sessionId) {
+      session = db.getCrawlSession(sessionId);
+      logs = db.getCrawlLogs(sessionId);
+    }
 
     res.json({
       data: allData,
+      totalPages,
+      totalResources,
+      session,
+      logs,
       paging: {
         limit,
         offset,

@@ -9,9 +9,10 @@ import { HomePage } from './components/home/HomePage';
 import { UserProfile } from './components/user/UserProfile';
 import { UserSettings } from './components/user/UserSettings';
 import AEODashboard from './components/aeo/AEODashboard';
+import { CrawlHistory } from './components/crawler/CrawlHistory';
 import { apiService, AnalysisResult } from './api';
 
-type View = 'home' | 'login' | 'register' | 'profile' | 'settings';
+type View = 'home' | 'login' | 'register' | 'profile' | 'settings' | 'history';
 
 const AppWithAuth: React.FC = () => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -126,6 +127,105 @@ const AppWithAuth: React.FC = () => {
     }
   };
 
+  // Handle selecting a crawl from history
+  const handleSelectCrawl = async (crawlUrl: string, sessionId: number, aeoResult: any) => {
+    setUrl(crawlUrl);
+    setCurrentView('home');
+    setLoading(true);
+    
+    try {
+      // Fetch session data (pages, stats, etc.)
+      const sessionData = await apiService.getSessionData(sessionId);
+      
+      // Extract pages from session data
+      const sessionPages = sessionData.data
+        .filter((item: any) => item.resourceType === 'page')
+        .map((page: any) => page.url);
+      
+      // Restore pages and stats
+      setPages(sessionPages);
+      setPageCount(sessionData.totalPages);
+      
+      // Restore logs
+      if (sessionData.logs && sessionData.logs.length > 0) {
+        const logMessages = sessionData.logs.map((log: any) => log.message);
+        setLogs(logMessages);
+      } else {
+        // If no logs in database, show a placeholder message
+        setLogs([`📜 Crawl completed for ${crawlUrl}`, `Total pages: ${sessionData.totalPages}`]);
+      }
+      
+      // Set crawl stats if session data available
+      if (sessionData.session) {
+        setCrawlStats({
+          count: sessionData.totalPages,
+          duration: sessionData.session.duration || 0,
+          pagesPerSecond: sessionData.session.duration 
+            ? parseFloat((sessionData.totalPages / (sessionData.session.duration / 1000)).toFixed(2))
+            : 0
+        });
+      } else {
+        // Fallback crawl stats based on available data
+        setCrawlStats({
+          count: sessionData.totalPages,
+          duration: 0,
+          pagesPerSecond: 0
+        });
+      }
+      
+      // Restore AEO result if available
+      if (aeoResult) {
+        const restoredResult: AnalysisResult = {
+          success: true,
+          url: crawlUrl,
+          grade: aeoResult.grade,
+          grade_color: aeoResult.gradeColor,
+          overall_score: aeoResult.overallScore,
+          module_scores: aeoResult.moduleScores,
+          module_weights: aeoResult.moduleWeights,
+          detailed_analysis: aeoResult.detailedAnalysis,
+          structured_data: aeoResult.structuredData,
+          all_recommendations: aeoResult.recommendations,
+          errors: aeoResult.errors,
+          warnings: aeoResult.warnings,
+          analysis_timestamp: aeoResult.analysisTimestamp,
+          run_id: aeoResult.runId
+        };
+        setResult(restoredResult);
+      }
+      
+      setRunCrawl(true); // Show crawl results including crawler tab
+      
+    } catch (error: any) {
+      console.error('Failed to restore session data:', error);
+      setError(`Failed to restore crawl data: ${error.message}`);
+      
+      // Still restore AEO result even if session data fails
+      if (aeoResult) {
+        const restoredResult: AnalysisResult = {
+          success: true,
+          url: crawlUrl,
+          grade: aeoResult.grade,
+          grade_color: aeoResult.gradeColor,
+          overall_score: aeoResult.overallScore,
+          module_scores: aeoResult.moduleScores,
+          module_weights: aeoResult.moduleWeights,
+          detailed_analysis: aeoResult.detailedAnalysis,
+          structured_data: aeoResult.structuredData,
+          all_recommendations: aeoResult.recommendations,
+          errors: aeoResult.errors,
+          warnings: aeoResult.warnings,
+          analysis_timestamp: aeoResult.analysisTimestamp,
+          run_id: aeoResult.runId
+        };
+        setResult(restoredResult);
+        setRunCrawl(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Render different views
   if (currentView === 'login') {
     return (
@@ -189,6 +289,23 @@ const AppWithAuth: React.FC = () => {
           currentView={currentView}
         />
         <UserSettings />
+      </div>
+    );
+  }
+
+  if (currentView === 'history') {
+    return (
+      <div className="min-h-screen bg-black" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '20px 20px' }}>
+        <Navbar
+          user={user}
+          isAuthenticated={isAuthenticated}
+          onNavigate={setCurrentView}
+          onLogout={logout}
+          currentView={currentView}
+        />
+        <div className="container mx-auto px-4 py-8">
+          <CrawlHistory onSelectCrawl={handleSelectCrawl} />
+        </div>
       </div>
     );
   }

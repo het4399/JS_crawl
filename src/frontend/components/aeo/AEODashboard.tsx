@@ -77,26 +77,147 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     strategy_review: 62
   };
 
-  const [aiPlatforms] = useState<AIPlatform[]>([
-    { name: 'ChatGPT', icon: 'A', score: 85, status: 'LIVE' },
-    { name: 'Gemini', icon: 'G', score: 85, status: 'LIVE' },
-    { name: 'Claude', icon: 'C', score: 85, status: 'LIVE' }
-  ]);
+  // Dynamically generate AI platforms from API response
+  const getAIPlatforms = (): AIPlatform[] => {
+    if (!result || !result.detailed_analysis?.ai_presence) {
+      // Fallback to demo data
+      return [
+        { name: 'ChatGPT', icon: 'A', score: 85, status: 'LIVE' },
+        { name: 'Gemini', icon: 'G', score: 85, status: 'LIVE' },
+        { name: 'Claude', icon: 'C', score: 85, status: 'LIVE' }
+      ];
+    }
 
-  const [competitors] = useState<Competitor[]>([
-    { name: 'Apple', count: 3 },
-    { name: 'Xiaomi', count: 2 },
-    { name: 'Oppo', count: 1 },
-    { name: 'Samsung', count: 1 },
-    { name: 'Other', count: 4 }
-  ]);
+    const aiData = result.detailed_analysis.ai_presence;
+    const platforms: AIPlatform[] = [];
 
-  const [strategyMetrics] = useState<StrategyMetric[]>([
-    { name: 'Answerability', score: 75, status: 'LIVE', color: 'green' },
-    { name: 'Knowledge Base', score: 31, status: 'LIVE', color: 'red' },
-    { name: 'Structured Data', score: 55, status: 'LIVE', color: 'orange' },
-    { name: 'AI Crawler Accessibility', score: 87, status: 'LIVE', color: 'green' }
-  ]);
+    // Map common AI platforms to icons
+    const platformIcons: { [key: string]: string } = {
+      'ChatGPT': 'A',
+      'chatgpt': 'A',
+      'Gemini': 'G',
+      'gemini': 'G',
+      'Claude': 'C',
+      'claude': 'C',
+      'Perplexity': 'P',
+      'perplexity': 'P'
+    };
+
+    // Check if the API provides platform-specific data
+    if (aiData.platforms) {
+      Object.entries(aiData.platforms).forEach(([name, data]: [string, any]) => {
+        platforms.push({
+          name: name,
+          icon: platformIcons[name] || name.charAt(0).toUpperCase(),
+          score: Math.round(data.score || data.visibility_score || 0),
+          status: data.status || 'LIVE'
+        });
+      });
+    }
+
+    // If no platforms data, return fallback
+    return platforms.length > 0 ? platforms : [
+      { name: 'ChatGPT', icon: 'A', score: 85, status: 'LIVE' },
+      { name: 'Gemini', icon: 'G', score: 85, status: 'LIVE' },
+      { name: 'Claude', icon: 'C', score: 85, status: 'LIVE' }
+    ];
+  };
+
+  // Dynamically generate competitors from API response
+  const getCompetitors = (): Competitor[] => {
+    if (!result || !result.detailed_analysis?.competitor_analysis) {
+      // Fallback to demo data
+      return [
+        { name: 'Competitor Analysis Not Available', count: 0 }
+      ];
+    }
+
+    const compData = result.detailed_analysis.competitor_analysis;
+    
+    // API returns: competitor_analysis.competitor_analysis as array
+    if (compData.competitor_analysis && Array.isArray(compData.competitor_analysis)) {
+      // Extract competitor URLs/domains
+      return compData.competitor_analysis.map((comp: any, index: number) => {
+        const url = comp.url || comp.domain || `Competitor ${index + 1}`;
+        // Extract domain name from URL
+        const domain = url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        return {
+          name: domain,
+          count: comp.schema_count || 1
+        };
+      });
+    }
+
+    // Fallback - show that competitor analysis exists but no data
+    return [
+      { name: 'Competitor Data Available', count: compData.score || 0 }
+    ];
+  };
+
+  const aiPlatforms = getAIPlatforms();
+  const competitors = getCompetitors();
+
+  // Dynamically generate strategy metrics from API response
+  const getStrategyMetrics = (): StrategyMetric[] => {
+    if (!result || !result.module_scores) {
+      // Fallback to demo data if no results
+      return [
+        { name: 'Answerability', score: 75, status: 'LIVE', color: 'green' },
+        { name: 'Knowledge Base', score: 31, status: 'LIVE', color: 'red' },
+        { name: 'Structured Data', score: 55, status: 'LIVE', color: 'orange' },
+        { name: 'AI Crawler Accessibility', score: 87, status: 'LIVE', color: 'green' }
+      ];
+    }
+
+    const getColorForScore = (score: number): 'green' | 'orange' | 'red' => {
+      if (score >= 70) return 'green';
+      if (score >= 40) return 'orange';
+      return 'red';
+    };
+
+    const metrics: StrategyMetric[] = [];
+
+    // Answerability
+    if (result.module_scores.answerability !== undefined) {
+      const score = Math.round(result.module_scores.answerability);
+      metrics.push({
+        name: 'Answerability',
+        score: score,
+        status: 'LIVE',
+        color: getColorForScore(score)
+      });
+    }
+
+    // Knowledge Base
+    if (result.module_scores.knowledge_base !== undefined) {
+      const score = Math.round(result.module_scores.knowledge_base);
+      metrics.push({
+        name: 'Knowledge Base',
+        score: score,
+        status: 'LIVE',
+        color: getColorForScore(score)
+      });
+    }
+
+    // NOTE: Structured Data is not returned by the API
+    // The backend doesn't have a dedicated structured data analysis module
+    // It might be part of knowledge_base or needs to be implemented separately
+
+    // AI Crawler Accessibility
+    if (result.module_scores.crawler_accessibility !== undefined) {
+      const score = Math.round(result.module_scores.crawler_accessibility);
+      metrics.push({
+        name: 'AI Crawler Accessibility',
+        score: score,
+        status: 'LIVE',
+        color: getColorForScore(score)
+      });
+    }
+
+    return metrics;
+  };
+
+  const strategyMetrics = getStrategyMetrics();
 
 
   const getScoreColor = (score: number) => {

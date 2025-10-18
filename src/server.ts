@@ -254,6 +254,31 @@ app.post('/api/schedules/:id/trigger', authenticateUser, async (req, res) => {
     }
 });
 
+// Crawl history endpoint
+app.get('/api/crawl-history', authenticateUser, (req, res) => {
+    try {
+        const userId = req.user!.userId;
+        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+        const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+        
+        const db = getDatabase();
+        const history = db.getUserCrawlSessionsWithResults(userId, limit, offset);
+        
+        res.json({
+            success: true,
+            history,
+            pagination: {
+                limit,
+                offset,
+                hasMore: history.length === limit
+            }
+        });
+    } catch (error) {
+        logger.error('Failed to get crawl history', error as Error);
+        res.status(500).json({ error: 'Failed to get crawl history' });
+    }
+});
+
 app.get('/api/schedules/:id/executions', authenticateUser, (req, res) => {
     try {
         const userId = req.user!.userId;

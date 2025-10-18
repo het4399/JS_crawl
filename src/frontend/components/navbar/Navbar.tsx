@@ -5,7 +5,7 @@ import './Navbar.css';
 interface NavbarProps {
     user: User | null;
     isAuthenticated: boolean;
-    onNavigate: (view: 'home' | 'profile' | 'settings' | 'login' | 'register') => void;
+    onNavigate: (view: 'home' | 'profile' | 'settings' | 'history' | 'login' | 'register') => void;
     onLogout: () => void;
     currentView?: string;
 }
@@ -55,6 +55,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                             </div>
 
                             {/* Navigation Buttons */}
+                            <button
+                                onClick={() => onNavigate('history')}
+                                className={`nav-btn ${currentView === 'history' ? 'nav-btn-active' : ''}`}
+                            >
+                                <span className="btn-icon">📜</span>
+                                <span>History</span>
+                            </button>
+
                             <button
                                 onClick={() => onNavigate('profile')}
                                 className={`nav-btn ${currentView === 'profile' ? 'nav-btn-active' : ''}`}

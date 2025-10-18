@@ -1,0 +1,42 @@
+.crawl-history-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.history-card {
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.history-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 12px rgba(139, 92, 246, 0.3);
+}
+
+.stat-box {
+  text-align: center;
+}
+
+.aeo-score-box {
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+
+.grade-badge {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  color: white;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 768px) {
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
