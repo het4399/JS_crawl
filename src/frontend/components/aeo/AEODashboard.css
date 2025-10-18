@@ -663,34 +663,86 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 4rem 2rem;
-  min-height: 300px;
+  padding: 60px 40px;
+  min-height: 350px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.1);
 }
 
-.empty-icon {
-  font-size: 4rem;
+.empty-icon, .empty-state-icon {
+  font-size: 5rem;
   margin-bottom: 1.5rem;
-  opacity: 0.8;
+  opacity: 0.4;
+  filter: grayscale(50%);
 }
 
 .empty-state h3 {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 600;
   color: #ffffff;
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 1rem 0;
 }
 
 .empty-state p {
   color: #9ca3af;
   font-size: 1rem;
-  line-height: 1.6;
-  max-width: 500px;
-  margin: 0 0 2rem 0;
+  line-height: 1.8;
+  max-width: 550px;
+  margin: 0 0 1.5rem 0;
+}
+
+.empty-state-hint {
+  background: rgba(102, 126, 234, 0.15);
+  border: 1px solid rgba(102, 126, 234, 0.4);
+  border-radius: 8px;
+  padding: 14px 20px;
+  color: #a78bfa;
+  font-size: 0.9rem;
+  margin-top: 1.5rem;
+  font-weight: 500;
 }
 
 .action-button.large {
   padding: 1rem 2rem;
   font-size: 1rem;
+}
+
+/* Badge for tab counts */
+.tab-button .badge {
+  display: inline-block;
+  background: rgba(102, 126, 234, 0.3);
+  color: #667eea;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Data Freshness Indicator */
+.data-freshness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  font-weight: 500;
+}
+
+/* Inline component wrappers */
+.data-viewer-inline,
+.link-explorer-inline,
+.web-tree-inline {
+  min-height: 600px;
+}
+
+.crawler-form-section {
+  margin-bottom: 2rem;
 }
 
 .quick-stats {

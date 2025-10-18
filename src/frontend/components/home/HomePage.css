@@ -7,6 +7,10 @@
 .hero-section {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-bottom: 1px solid rgba(102, 126, 234, 0.2);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 5rem 2rem;
     text-align: center;
     position: relative;
@@ -297,6 +301,7 @@
 @media (max-width: 768px) {
     .hero-section {
         padding: 4rem 1.5rem;
+        min-height: auto;
     }
 
     .hero-title {
