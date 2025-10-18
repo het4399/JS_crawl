@@ -17,6 +17,7 @@ import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
 import { AuditIntegration } from './audits/AuditIntegration.js';
+import { Mailer } from './utils/Mailer.js';
 
 type Client = {
     id: number;
@@ -26,6 +27,7 @@ type Client = {
 
 const app = express();
 const logger = Logger.getInstance();
+const mailer = Mailer.getInstance();
 
 app.use(cors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
@@ -465,6 +467,20 @@ app.post('/crawl',
         
         sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log', userId);
         
+        // Send email notification for crawl start (if user has notifications enabled)
+        try {
+            const user = db.getUserById(userId);
+            const userSettings = db.getUserSettings(userId);
+            if (user && userSettings?.emailNotifications) {
+                await mailer.send(
+                    `Crawl Started: ${safeUrl}`,
+                    `Hello ${user.name || user.email},\n\nYour crawl has started!\n\nURL: ${safeUrl}\nStarted: ${new Date().toLocaleString()}\nRun Audits: ${runAudits ? 'Yes' : 'No'}\n\nYou'll receive another email when the crawl completes.\n\nBest regards,\nContentlytics Team`
+                );
+            }
+        } catch (error) {
+            logger.error('Failed to send crawl start email', error as Error);
+        }
+        
         try {
             await runCrawl({
                 startUrl: safeUrl,
@@ -520,6 +536,20 @@ app.post('/crawl',
                         logger.error('Failed to track user usage', error as Error);
                     }
                     
+                    // Send email notification for crawl completion (if user has notifications enabled)
+                    try {
+                        const user = db.getUserById(userId);
+                        const userSettings = db.getUserSettings(userId);
+                        if (user && userSettings?.emailNotifications) {
+                            await mailer.send(
+                                `Crawl Completed: ${safeUrl}`,
+                                `Hello ${user.name || user.email},\n\nYour crawl has completed successfully! 🎉\n\nURL: ${safeUrl}\nTotal Pages: ${count}\nDuration: ${durationSeconds}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`
+                            );
+                        }
+                    } catch (error) {
+                        logger.error('Failed to send crawl completion email', error as Error);
+                    }
+                    
                     // Update health checker
                     healthChecker.setActiveCrawls(0);
                 },
@@ -547,10 +577,25 @@ app.post('/crawl',
         } catch (e) {
             const error = e as Error;
             const duration = Date.now() - startTime;
+            const durationSeconds = Math.floor(duration / 1000);
             sendEvent({ type: 'log', message: `Error: ${error.message}` }, 'log', userId);
             logger.error('Crawl failed', error, { duration: `${duration}ms` }, requestId);
             healthChecker.recordError(error.message);
             healthChecker.setActiveCrawls(0);
+            
+            // Send email notification for crawl failure (if user has notifications enabled)
+            try {
+                const user = db.getUserById(userId);
+                const userSettings = db.getUserSettings(userId);
+                if (user && userSettings?.emailNotifications) {
+                    await mailer.send(
+                        `Crawl Failed: ${safeUrl}`,
+                        `Hello ${user.name || user.email},\n\nYour crawl encountered an error and could not complete. ⚠️\n\nURL: ${safeUrl}\nError: ${error.message}\nDuration: ${durationSeconds}s\nFailed: ${new Date().toLocaleString()}\n\nPlease try again or contact support if the issue persists.\n\nBest regards,\nContentlytics Team`
+                    );
+                }
+            } catch (emailError) {
+                logger.error('Failed to send crawl failure email', emailError as Error);
+            }
         }
     })();
 });

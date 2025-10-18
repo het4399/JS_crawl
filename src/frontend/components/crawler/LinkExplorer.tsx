@@ -42,7 +42,7 @@ interface LinkExplorerProps {
 
 export default function LinkExplorer({ onClose }: LinkExplorerProps) {
   
-  const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; totalPages: number }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: number; startUrl: string; startedAt: string; completedAt?: string; totalPages: number }>>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [links, setLinks] = useState<LinkData[]>([]);
   const [stats, setStats] = useState<LinkStats | null>(null);
@@ -312,7 +312,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
           <option value="">Choose a session...</option>
           {sessions.map(session => (
             <option key={session.id} value={session.id}>
-              Session {session.id} - {new Date(session.startedAt).toLocaleString()} ({session.totalPages} pages)
+              {session.startUrl} - {new Date(session.startedAt).toLocaleString()} ({session.totalPages} pages)
             </option>
           ))}
         </select>

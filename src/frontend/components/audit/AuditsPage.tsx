@@ -45,7 +45,7 @@ export default function AuditsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('');
-  const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; totalPages: number }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: number; startUrl: string; startedAt: string; completedAt?: string; totalPages: number }>>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>('all');
 
   // Load sessions on mount
@@ -104,7 +104,7 @@ export default function AuditsPage() {
           <option value="all">All Sessions</option>
           {sessions.map(session => (
             <option key={session.id} value={session.id}>
-              Session #{session.id} - {new Date(session.startedAt).toLocaleDateString()} ({session.totalPages} pages)
+              {session.startUrl} - {new Date(session.startedAt).toLocaleDateString()} ({session.totalPages} pages)
             </option>
           ))}
         </select>
