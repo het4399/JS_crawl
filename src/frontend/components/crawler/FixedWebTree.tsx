@@ -61,17 +61,17 @@ export default function WebTree({ onClose }: WebTreeProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [treeData, setTreeData] = useState<D3TreeNode | null>(null);
-  const [orientation, setOrientation] = useState<'vertical' | 'horizontal'>('vertical');
-  const [siblingSeparation, setSiblingSeparation] = useState<number>(1.2);
-  const [nonSiblingSeparation, setNonSiblingSeparation] = useState<number>(1.6);
-  const [labelMaxChars, setLabelMaxChars] = useState<number>(60);
+  const [orientation, setOrientation] = useState<'vertical' | 'horizontal'>('horizontal');
+  const [siblingSeparation, setSiblingSeparation] = useState<number>(0.8);
+  const [nonSiblingSeparation, setNonSiblingSeparation] = useState<number>(1.0);
+  const [labelMaxChars, setLabelMaxChars] = useState<number>(40);
   const [primaryHost, setPrimaryHost] = useState<string | null>(null);
   const [totalUrlsUsed, setTotalUrlsUsed] = useState<number>(0);
   const [breadcrumb, setBreadcrumb] = useState<string[]>([]);
   const [recenterKey, setRecenterKey] = useState<number>(0);
   
   // SEO keywords toggle and data
-  const [seoEnabled, setSeoEnabled] = useState<boolean>(false);
+  const [seoEnabled, setSeoEnabled] = useState<boolean>(true);
   const [seoLoading, setSeoLoading] = useState<boolean>(false);
   const [seoBatchLoading, setSeoBatchLoading] = useState<boolean>(false);
   const [seoProgress, setSeoProgress] = useState<{ current: number; total: number; estimatedTimeRemaining?: number } | null>(null);
@@ -393,13 +393,11 @@ export default function WebTree({ onClose }: WebTreeProps) {
         // Attach SEO nodes without visual prefixes; mark internal types for keying
         const keywordChildren: TidyTreeNode[] = (seo.topKeywords || []).slice(0, 8).map((kw) => ({
           text: kw,
-          // @ts-expect-error - attach internal type info for D3 keying
           __type: 'kw'
         } as any));
         const mainKwNode = {
           text: seo.parentText,
           children: keywordChildren.length ? keywordChildren : undefined,
-          // @ts-expect-error - attach internal type info for D3 keying
           __type: 'seo'
         } as any;
         childrenWithSeo = [mainKwNode, ...childrenWithSeo];
@@ -437,12 +435,6 @@ export default function WebTree({ onClose }: WebTreeProps) {
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-          >
-            Close
-          </button>
         </div>
 
         {/* Controls */}
@@ -464,58 +456,36 @@ export default function WebTree({ onClose }: WebTreeProps) {
             </label>
             
             <div className="flex items-center gap-2">
-              <span className="text-white">Layout:</span>
               <button 
                 className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                onClick={() => setOrientation(prev => prev === 'vertical' ? 'horizontal' : 'vertical')}
-              >
-                {orientation === 'vertical' ? 'Vertical' : 'Horizontal'}
-              </button>
-              <button 
-                className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                onClick={() => { setSiblingSeparation(0.9); setNonSiblingSeparation(1.0); setLabelMaxChars(40); }}
+                onClick={() => { setSiblingSeparation(0.6); setNonSiblingSeparation(0.8); setLabelMaxChars(30); }}
+                title="Ultra compact - Best for 1000+ nodes"
               >
                 Compact
               </button>
               <button 
                 className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                onClick={() => { setSiblingSeparation(1.4); setNonSiblingSeparation(1.6); setLabelMaxChars(60); }}
+                onClick={() => { setSiblingSeparation(1.0); setNonSiblingSeparation(1.3); setLabelMaxChars(50); }}
+                title="Balanced spacing - Good for 100-500 nodes"
               >
                 Comfortable
               </button>
-              <button 
-                className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
-                onClick={() => { autoAdjustLayout(treeData); setRecenterKey(k => k + 1); }}
-              >
-                Auto-fit
-              </button>
             </div>
             
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-white">
-                <input 
-                  type="checkbox" 
-                  checked={seoEnabled} 
-                  onChange={(e) => setSeoEnabled(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                />
-                SEO keywords
-              </label>
-              {seoEnabled && (seoLoading || seoBatchLoading) && (
-                <span className="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-sm flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
-                  {seoBatchLoading && seoProgress ? (
-                    <>
-                      <span>Extracting {seoProgress.current}/{seoProgress.total}</span>
-                      <span className="opacity-80">ETA {formatSeconds(seoProgress.estimatedTimeRemaining)}</span>
-                    </>
-                  ) : (
-                    <span>Extracting…</span>
-                  )}
-                </span>
-              )}
-              {seoEnabled && seoError && <span className="px-2 py-1 bg-red-900 text-red-300 rounded text-sm">{seoError}</span>}
-            </div>
+            {seoEnabled && (seoLoading || seoBatchLoading) && (
+              <span className="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-sm flex items-center gap-2">
+                <span className="inline-block w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
+                {seoBatchLoading && seoProgress ? (
+                  <>
+                    <span>Extracting {seoProgress.current}/{seoProgress.total}</span>
+                    <span className="opacity-80">ETA {formatSeconds(seoProgress.estimatedTimeRemaining)}</span>
+                  </>
+                ) : (
+                  <span>Extracting…</span>
+                )}
+              </span>
+            )}
+            {seoEnabled && seoError && <span className="px-2 py-1 bg-red-900 text-red-300 rounded text-sm">{seoError}</span>}
             
             <button 
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
@@ -534,12 +504,6 @@ export default function WebTree({ onClose }: WebTreeProps) {
           <div className="p-3 border-b border-gray-700 text-gray-300">
             <span className="font-medium">Path: </span>
             {breadcrumb.join(' › ')}
-            <button 
-              className="ml-3 px-2 py-1 bg-gray-700 text-white rounded text-sm hover:bg-gray-600"
-              onClick={() => setRecenterKey(k => k + 1)}
-            >
-              Center
-            </button>
           </div>
         )}
 

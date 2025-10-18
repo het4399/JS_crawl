@@ -139,11 +139,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>AI Presence</h3>
-            <span className="status-badge live">LIVE</span>
           </div>
           <div className="card-score">
-            <div className="score-circle-large" style={{ backgroundColor: getScoreColor(scores.ai_presence) }}>
-              {scores.ai_presence}
+            <div 
+              className="score-circle-metric"
+              style={{ 
+                '--progress': scores.ai_presence,
+                '--color': getScoreColor(scores.ai_presence)
+              } as React.CSSProperties}
+            >
+              <div className="score-value-metric">{scores.ai_presence}</div>
             </div>
           </div>
           <div className="ai-platforms">
@@ -156,7 +161,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                   <span className="platform-name">{platform.name}</span>
                   <div className="platform-score">
                     <span className="score">{platform.score}</span>
-                    <span className="status live">LIVE</span>
                   </div>
                 </div>
               </div>
@@ -168,11 +172,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>Competitor Landscape</h3>
-            <span className="status-badge live">LIVE</span>
           </div>
           <div className="card-score">
-            <div className="score-circle-large" style={{ backgroundColor: getScoreColor(scores.competitor_landscape) }}>
-              {scores.competitor_landscape}
+            <div 
+              className="score-circle-metric"
+              style={{ 
+                '--progress': scores.competitor_landscape,
+                '--color': getScoreColor(scores.competitor_landscape)
+              } as React.CSSProperties}
+            >
+              <div className="score-value-metric">{scores.competitor_landscape}</div>
             </div>
           </div>
           <div className="competitor-description">
@@ -194,11 +203,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>Strategy Review</h3>
-            <span className="status-badge live">LIVE</span>
           </div>
           <div className="card-score">
-            <div className="score-circle-large" style={{ backgroundColor: getScoreColor(scores.strategy_review) }}>
-              {scores.strategy_review}
+            <div 
+              className="score-circle-metric"
+              style={{ 
+                '--progress': scores.strategy_review,
+                '--color': getScoreColor(scores.strategy_review)
+              } as React.CSSProperties}
+            >
+              <div className="score-value-metric">{scores.strategy_review}</div>
             </div>
           </div>
           <div className="strategy-metrics">
@@ -218,7 +232,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                   </div>
                   <div className="metric-score">
                     <span className="score">{metric.score}</span>
-                    <span className="status live">LIVE</span>
                   </div>
                 </div>
               </div>

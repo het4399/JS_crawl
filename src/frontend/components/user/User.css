@@ -12,12 +12,11 @@
 .settings-card {
     max-width: 900px;
     margin: 0 auto;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.6) 0%, rgba(26, 26, 46, 0.8) 100%);
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(26, 26, 46, 0.9) 100%);
     border: 1px solid rgba(139, 92, 246, 0.3);
     border-radius: 16px;
     padding: 2.5rem;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(139, 92, 246, 0.15);
-    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     position: relative;
 }
 
@@ -90,18 +89,14 @@
 
 .stat-card {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
-    backdrop-filter: blur(10px);
     padding: 1.5rem;
     border-radius: 12px;
     text-align: center;
     border: 1px solid rgba(139, 92, 246, 0.3);
-    transition: all 0.3s;
 }
 
 .stat-card:hover {
     border-color: #8b5cf6;
-    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
-    transform: translateY(-2px);
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
 }
 
@@ -182,26 +177,20 @@
     border-bottom: 1px solid rgba(102, 126, 234, 0.2);
 }
 
-/* Buttons */
+/* Buttons - Performance optimized */
 .profile-actions,
 .form-actions {
     display: flex !important;
     gap: 1rem !important;
     margin-top: 2rem !important;
     padding: 1.5rem !important;
-    background: rgba(139, 92, 246, 0.05) !important;
-    background-color: rgba(139, 92, 246, 0.05) !important;
+    background: rgba(139, 92, 246, 0.08) !important;
     border: 1px solid rgba(139, 92, 246, 0.2) !important;
-    border-top: 1px solid rgba(139, 92, 246, 0.2) !important;
-    border-bottom: 1px solid rgba(139, 92, 246, 0.2) !important;
-    border-left: 1px solid rgba(139, 92, 246, 0.2) !important;
-    border-right: 1px solid rgba(139, 92, 246, 0.2) !important;
     border-radius: 12px !important;
-    backdrop-filter: blur(5px) !important;
 }
 
 .settings-form .form-actions {
-    background: rgba(139, 92, 246, 0.08) !important;
+    background: rgba(139, 92, 246, 0.1) !important;
     border-color: rgba(139, 92, 246, 0.3) !important;
 }
 

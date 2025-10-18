@@ -155,6 +155,11 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
     update(updateSource as any);
 
     function update(source: any) {
+      // Ensure source has valid coordinates
+      if (!source) source = root;
+      if (source.x0 === undefined) source.x0 = 0;
+      if (source.y0 === undefined) source.y0 = 0;
+      
       const nodes = (root as any).descendants().reverse();
       const links = (root as any).links();
 
@@ -165,28 +170,36 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
 
       let left: any = root, right: any = root;
       (root as any).eachBefore((n: any) => {
-        if (n.x < left.x) left = n;
-        if (n.x > right.x) right = n;
+        if (n.x !== undefined && (left.x === undefined || n.x < left.x)) left = n;
+        if (n.x !== undefined && (right.x === undefined || n.x > right.x)) right = n;
       });
 
       // Center vertically by shifting inner group; keep viewBox constant
       if (!didCenterRef.current || recenterKey !== undefined) {
+        const leftX = left.x ?? 0;
+        const rightX = right.x ?? 0;
+        const leftY = left.y ?? 0;
+        const rightY = right.y ?? 0;
         const centerOffset = orientation === 'horizontal'
-          ? (height / 2) - ((left.x + right.x) / 2)
-          : (height / 2) - ((left.y + right.y) / 2);
+          ? (height / 2) - ((leftX + rightX) / 2)
+          : (height / 2) - ((leftY + rightY) / 2);
         const topPadding = orientation === 'vertical' ? (dx * 1.5) : 0; // give extra height above root
         
         // Store stable center for future updates
         stableCenterRef.current = {
-          x: orientation === 'horizontal' ? 0 : centerOffset + topPadding,
-          y: orientation === 'horizontal' ? centerOffset + topPadding : 0
+          x: orientation === 'horizontal' ? 0 : (centerOffset + topPadding),
+          y: orientation === 'horizontal' ? (centerOffset + topPadding) : 0
         };
         
-        g.attr('transform', `translate(${stableCenterRef.current.x}, ${stableCenterRef.current.y})`);
+        const cx = stableCenterRef.current.x ?? 0;
+        const cy = stableCenterRef.current.y ?? 0;
+        g.attr('transform', `translate(${cx}, ${cy})`);
         didCenterRef.current = true;
       } else if (stableCenterRef.current) {
         // Use stable center to prevent jumping
-        g.attr('transform', `translate(${stableCenterRef.current.x}, ${stableCenterRef.current.y})`);
+        const cx = stableCenterRef.current.x ?? 0;
+        const cy = stableCenterRef.current.y ?? 0;
+        g.attr('transform', `translate(${cx}, ${cy})`);
       }
 
       // Restore the zoom/pan transform to prevent jumping
@@ -199,7 +212,11 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
 
       const nodeEnter = node.enter().append('g')
         .attr('class', 'node')
-        .attr('transform', () => `translate(${orientation === 'horizontal' ? source.y0 : source.x0},${orientation === 'horizontal' ? source.x0 : source.y0})`)
+        .attr('transform', () => {
+          const x0 = source.x0 ?? 0;
+          const y0 = source.y0 ?? 0;
+          return orientation === 'horizontal' ? `translate(${y0},${x0})` : `translate(${x0},${y0})`;
+        })
         .attr('cursor', 'pointer')
         .on('dblclick', (_event: any, d: any) => {
           // Guard so the single-click handler below does not also run
@@ -295,9 +312,17 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
       // Smooth transition positioning
       const transition = (svg as any).transition().duration(250);
       nodeEnter.transition(transition)
-        .attr('transform', (d: any) => orientation === 'horizontal' ? `translate(${d.y},${d.x})` : `translate(${d.x},${d.y})`);
+        .attr('transform', (d: any) => {
+          const x = d.x ?? 0;
+          const y = d.y ?? 0;
+          return orientation === 'horizontal' ? `translate(${y},${x})` : `translate(${x},${y})`;
+        });
       (nodeUpdate as any).transition(transition)
-        .attr('transform', (d: any) => orientation === 'horizontal' ? `translate(${d.y},${d.x})` : `translate(${d.x},${d.y})`);
+        .attr('transform', (d: any) => {
+          const x = d.x ?? 0;
+          const y = d.y ?? 0;
+          return orientation === 'horizontal' ? `translate(${y},${x})` : `translate(${x},${y})`;
+        });
 
       nodeUpdate.select('circle')
         .attr('r', 6)
@@ -305,7 +330,11 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
         .style('cursor', 'pointer');
 
       node.exit().transition(transition)
-        .attr('transform', () => `translate(${orientation === 'horizontal' ? source.y : source.x},${orientation === 'horizontal' ? source.x : source.y})`)
+        .attr('transform', () => {
+          const x = source.x ?? 0;
+          const y = source.y ?? 0;
+          return orientation === 'horizontal' ? `translate(${y},${x})` : `translate(${x},${y})`;
+        })
         .remove();
 
       const link = g.selectAll<SVGPathElement, any>('path.link')
@@ -314,7 +343,9 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
       const linkEnter = link.enter().insert('path', 'g')
         .attr('class', 'link')
         .attr('d', () => {
-          const o = orientation === 'horizontal' ? { x: (source as any).x0, y: (source as any).y0 } : { x: (source as any).y0, y: (source as any).x0 };
+          const x0 = source.x0 ?? 0;
+          const y0 = source.y0 ?? 0;
+          const o = orientation === 'horizontal' ? { x: x0, y: y0 } : { x: y0, y: x0 };
           return (diagonal as any)({ source: o, target: o });
         })
         .attr('fill', 'none')
@@ -322,12 +353,23 @@ export default function D3TidyTree({ data, height = 600, orientation = 'horizont
         .attr('stroke-width', 2)
         .style('opacity', 0.7);
 
-      (link as any).merge(linkEnter as any).transition(transition).attr('d', diagonal as any);
+      (link as any).merge(linkEnter as any).transition(transition).attr('d', (d: any) => {
+        const sourceX = d.source.x ?? 0;
+        const sourceY = d.source.y ?? 0;
+        const targetX = d.target.x ?? 0;
+        const targetY = d.target.y ?? 0;
+        
+        const linkData = orientation === 'horizontal' 
+          ? { source: { x: sourceX, y: sourceY }, target: { x: targetX, y: targetY } }
+          : { source: { x: sourceY, y: sourceX }, target: { x: targetY, y: targetX } };
+        
+        return (diagonal as any)(linkData);
+      });
       link.exit().transition(transition).remove();
 
       (root as any).eachBefore((d: any) => {
-        d.x0 = d.x;
-        d.y0 = d.y;
+        d.x0 = d.x ?? 0;
+        d.y0 = d.y ?? 0;
       });
       // Note: Auto-centering on node interaction is intentionally disabled to avoid view jumps
     }

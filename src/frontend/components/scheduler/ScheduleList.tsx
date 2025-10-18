@@ -159,12 +159,6 @@ const ScheduleList: React.FC = () => {
         <div className="schedule-list">
             <div className="schedule-header">
                 <h2>Scheduled Crawls</h2>
-                <button 
-                    className="btn btn-primary"
-                    onClick={() => setShowForm(true)}
-                >
-                    + New Schedule
-                </button>
             </div>
 
             {error && (
@@ -173,18 +167,10 @@ const ScheduleList: React.FC = () => {
                 </div>
             )}
 
-            {showForm && (
-                <div className="modal-overlay">
-                    <div className="modal">
-                        <ScheduleForm 
-                            schedule={editingSchedule}
-                            onClose={handleFormClose}
-                        />
-                    </div>
-                </div>
-            )}
-
-            <div className="schedule-grid">
+            <div className="schedule-content-wrapper">
+                {/* Left side - Schedule List */}
+                <div className="schedule-list-section">
+                    <div className="schedule-grid">
                 {schedules.map((schedule) => (
                     <div 
                         key={schedule.id} 
@@ -261,37 +247,47 @@ const ScheduleList: React.FC = () => {
                         </div>
                     </div>
                 ))}
-            </div>
+                    </div>
 
-            {selectedSchedule && (
-                <div className="schedule-details">
-                    <h3>Schedule Details: {selectedSchedule.name}</h3>
-                    {stats && (
-                        <div className="stats-grid">
-                            <div className="stat-card">
-                                <h4>Success Rate</h4>
-                                <div className="stat-value">{stats.successRate.toFixed(1)}%</div>
-                            </div>
-                            <div className="stat-card">
-                                <h4>Average Duration</h4>
-                                <div className="stat-value">{Math.round(stats.averageDuration / 1000)}s</div>
-                            </div>
-                            <div className="stat-card">
-                                <h4>Last Run</h4>
-                                <div className="stat-value">
-                                    {stats.lastRun ? formatDate(stats.lastRun) : 'Never'}
+                    {selectedSchedule && (
+                        <div className="schedule-details">
+                            <h3>Schedule Details: {selectedSchedule.name}</h3>
+                            {stats && (
+                                <div className="stats-grid">
+                                    <div className="stat-card">
+                                        <h4>Success Rate</h4>
+                                        <div className="stat-value">{stats.successRate.toFixed(1)}%</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <h4>Average Duration</h4>
+                                        <div className="stat-value">{Math.round(stats.averageDuration / 1000)}s</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <h4>Last Run</h4>
+                                        <div className="stat-value">
+                                            {stats.lastRun ? formatDate(stats.lastRun) : 'Never'}
+                                        </div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <h4>Next Run</h4>
+                                        <div className="stat-value">
+                                            {stats.nextRun ? formatDate(stats.nextRun) : 'Not scheduled'}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="stat-card">
-                                <h4>Next Run</h4>
-                                <div className="stat-value">
-                                    {stats.nextRun ? formatDate(stats.nextRun) : 'Not scheduled'}
-                                </div>
-                            </div>
+                            )}
                         </div>
                     )}
                 </div>
-            )}
+
+                {/* Right side - Schedule Form (Always visible) */}
+                <div className="schedule-form-section">
+                    <ScheduleForm 
+                        schedule={editingSchedule}
+                        onClose={handleFormClose}
+                    />
+                </div>
+            </div>
         </div>
     );
 };
