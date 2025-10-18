@@ -15,7 +15,7 @@ const logger = Logger.getInstance();
 
 // Helper function to verify session ownership
 function verifySessionOwnership(sessionId: number, userId: number, db: any): boolean {
-  const session = db.getCrawlSessionById(sessionId);
+  const session = db.getCrawlSession(sessionId);
   if (!session) return false;
   // Admin can access all sessions
   return session.userId === userId || session.userId === undefined || session.userId === null;

@@ -64,9 +64,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   onStopCrawl
 }) => {
   const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'schedules' | 'audits' | 'seo-queue'>(runCrawl ? 'crawler' : 'data');
-  const [showDataViewer, setShowDataViewer] = useState(false);
-  const [showLinkExplorer, setShowLinkExplorer] = useState(false);
-  const [showWebTree, setShowWebTree] = useState(false);
   // Use real data from analysis result or fallback to defaults
   const scores: AEOScore = result ? {
     overall: Math.round(result.overall_score || 0),
@@ -367,73 +364,27 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           )}
           
           {activeView === 'data' && (
-            <div className="data-content">
-              <div className="empty-state">
-                <div className="empty-icon">📊</div>
-                <h3>Crawled Data Analysis</h3>
-                <p>View and analyze all crawled pages, metadata, and structured data from your website.</p>
-                <button
-                  onClick={() => setShowDataViewer(true)}
-                  className="action-button primary large"
-                >
-                  📊 Open Data Viewer
-                </button>
-                {result?.pages?.length > 0 && (
-                  <div className="quick-stats">
-                    <span>{result.pages.length} pages crawled</span>
-                    <span>•</span>
-                    <span>{result?.total_links || 0} links found</span>
-                  </div>
-                )}
-              </div>
+            <div className="data-content-embedded">
+              <DataViewer
+                onClose={() => {}}
+                initialSessionId={result?.session_id || null}
+              />
             </div>
           )}
           
           {activeView === 'links' && (
-            <div className="links-content">
-              <div className="empty-state">
-                <div className="empty-icon">🔗</div>
-                <h3>Link Analysis</h3>
-                <p>Explore internal and external links, analyze link structure, and identify broken links.</p>
-                <button
-                  onClick={() => setShowLinkExplorer(true)}
-                  className="action-button primary large"
-                >
-                  🔗 Open Link Explorer
-                </button>
-                {(result?.internal_links > 0 || result?.external_links > 0) && (
-                  <div className="quick-stats">
-                    <span>{result?.internal_links || 0} internal</span>
-                    <span>•</span>
-                    <span>{result?.external_links || 0} external</span>
-                    <span>•</span>
-                    <span>{result?.broken_links || 0} broken</span>
-                  </div>
-                )}
-              </div>
+            <div className="links-content-embedded">
+              <LinkExplorer
+                onClose={() => {}}
+              />
             </div>
           )}
           
           {activeView === 'tree' && (
-            <div className="tree-content">
-              <div className="empty-state">
-                <div className="empty-icon">🌳</div>
-                <h3>Site Structure</h3>
-                <p>Visualize your website's hierarchical structure and page relationships in an interactive tree view.</p>
-                <button
-                  onClick={() => setShowWebTree(true)}
-                  className="action-button primary large"
-                >
-                  🌳 Open Site Structure
-                </button>
-                {result?.pages?.length > 0 && (
-                  <div className="quick-stats">
-                    <span>{result.pages.length} pages</span>
-                    <span>•</span>
-                    <span>Depth: {result?.max_depth || 'Unknown'}</span>
-                  </div>
-                )}
-              </div>
+            <div className="tree-content-embedded">
+              <WebTree
+                onClose={() => {}}
+              />
             </div>
           )}
           
@@ -444,26 +395,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           )}
         </div>
       </div>
-
-      {/* Modals */}
-      {showDataViewer && (
-        <DataViewer
-          onClose={() => setShowDataViewer(false)}
-          sessionId={result?.session_id}
-        />
-      )}
-      {showLinkExplorer && (
-        <LinkExplorer
-          onClose={() => setShowLinkExplorer(false)}
-          sessionId={result?.session_id}
-        />
-      )}
-      {showWebTree && (
-        <WebTree
-          onClose={() => setShowWebTree(false)}
-          sessionId={result?.session_id}
-        />
-      )}
 
     </div>
   );

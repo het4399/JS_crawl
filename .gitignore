@@ -9,6 +9,7 @@ jspm_packages/
 
 # Build outputs
 dist/
+dist-frontend/
 build/
 out/
 .next/
@@ -79,6 +80,7 @@ ENV/
 env.bak/
 venv.bak/
 .venv/
+aeo-api/venv/
 
 # Python distribution / packaging
 .Python
@@ -108,6 +110,9 @@ wheels/
 *.sqlite3
 *.rdb
 
+# Redis persistence
+dump.rdb
+
 # Storage directories
 storage/
 proxy/storage/
@@ -127,8 +132,7 @@ proxy/storage/
 .env.production.local
 .env.test
 
-# Config files with secrets
-aeo-api/config/openai.json
+# Config files with secrets (see Project Specific section)
 **/config/openai.json
 
 # ===========================================
@@ -166,23 +170,24 @@ Thumbs.db
 .parcel-cache/
 
 # ===========================================
-# Project Specific
+# Project Specific (Contentlytics)
 # ===========================================
 
-# Audit results
+# Storage directory (crawler data, audits, queues, etc.)
+storage/
+
+# Specifically ignore storage subdirectories
 storage/audits/
-
-# Request queues
 storage/request_queues/
-
-# Key-value stores
 storage/key_value_stores/
-
-# Datasets
 storage/datasets/
-
-# Audit queue files
 storage/audit-queue.txt
+
+# Crawler database
+storage/crawler.db
+
+# AEO API config with secrets
+aeo-api/config/openai.json
 
 # ===========================================
 # Serverless & Deployment

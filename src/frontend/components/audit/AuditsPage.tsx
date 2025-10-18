@@ -45,13 +45,32 @@ export default function AuditsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('');
+  const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; totalPages: number }>>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>('all');
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  const loadSessions = async () => {
+    try {
+      const res = await fetch('/api/data/sessions?limit=200');
+      if (!res.ok) throw new Error('Failed to load sessions');
+      const result = await res.json();
+      setSessions(result.sessions || []);
+    } catch (e) {
+      console.error('Failed to load sessions', e);
+    }
+  };
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams();
     if (device !== 'all') params.set('device', device);
+    if (selectedSessionId !== 'all') params.set('sessionId', String(selectedSessionId));
     params.set('limit', '100');
     return `/api/audits?${params.toString()}`;
-  }, [device]);
+  }, [device, selectedSessionId]);
 
   const load = async () => {
     setLoading(true);
@@ -77,10 +96,22 @@ export default function AuditsPage() {
     <div className="panel audits-dark">
       <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>📈 Audits</h3>
+        <select 
+          value={selectedSessionId} 
+          onChange={(e) => setSelectedSessionId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          className="select"
+        >
+          <option value="all">All Sessions</option>
+          {sessions.map(session => (
+            <option key={session.id} value={session.id}>
+              Session #{session.id} - {new Date(session.startedAt).toLocaleDateString()} ({session.totalPages} pages)
+            </option>
+          ))}
+        </select>
         <select value={device} onChange={(e) => setDevice(e.target.value as any)} className="select">
           <option value="mobile">Mobile</option>
           <option value="desktop">Desktop</option>
-          <option value="all">All</option>
+          <option value="all">All Devices</option>
         </select>
         <input
           className="audits-filter"

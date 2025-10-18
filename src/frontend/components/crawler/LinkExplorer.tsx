@@ -55,6 +55,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
   const [internalFilter, setInternalFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
+  const [loadingLinks, setLoadingLinks] = useState<boolean>(false);
 
   useEffect(() => {
     loadSessions();
@@ -120,6 +121,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
     console.log('Loading links for page:', pageId, 'with type:', linkTypeToUse);
     
     try {
+      setLoadingLinks(true);
       const response = await fetch(`/api/links?sessionId=${selectedSessionId}&pageId=${pageId}&type=${linkTypeToUse}&limit=100`);
       if (!response.ok) throw new Error('Failed to load links');
       const data = await response.json();
@@ -127,6 +129,8 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
       setLinks(data.links);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load links');
+    } finally {
+      setLoadingLinks(false);
     }
   };
 
@@ -155,7 +159,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
       filter: true,
       resizable: true,
       cellRenderer: (params: any) => params.value || '(empty)',
-      width: 150
+      width: 200
     },
     {
       field: linkType === 'in' ? 'sourceUrl' : 'targetUrl',
@@ -171,7 +175,7 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
           </a>
         ) : '-';
       },
-      width: 300
+      width: 400
     },
     {
       field: 'position',
@@ -193,24 +197,6 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
         </span>
       ),
       width: 100
-    },
-    {
-      field: 'rel',
-      headerName: 'Rel',
-      sortable: true,
-      filter: true,
-      resizable: true,
-      cellRenderer: (params: any) => params.value || '-',
-      width: 80
-    },
-    {
-      field: 'nofollow',
-      headerName: 'Nofollow',
-      sortable: true,
-      filter: true,
-      resizable: true,
-      cellRenderer: (params: any) => params.value ? '✓' : '✗',
-      width: 80
     },
     {
       field: 'xpath',
@@ -429,8 +415,16 @@ export default function LinkExplorer({ onClose }: LinkExplorerProps) {
                 </button>
               </div>
 
-              <div className="links-table-container" style={{ height: '600px', width: '100%' }}>
-                <div className="ag-theme-alpine" style={{ height: '100%', width: '100%' }}>
+              <div className="links-table-container" style={{ height: '600px', width: '100%', position: 'relative' }}>
+                {loadingLinks && (
+                  <div className="links-loading-overlay">
+                    <div className="loading-spinner">
+                      <div className="spinner"></div>
+                      <div className="loading-text">Loading links...</div>
+                    </div>
+                  </div>
+                )}
+                <div className="ag-theme-alpine" style={{ height: '100%', width: '100%', opacity: loadingLinks ? 0.3 : 1, transition: 'opacity 0.2s ease' }}>
                   <AgGridReact
                     rowData={filteredLinks}
                     columnDefs={columnDefs}
