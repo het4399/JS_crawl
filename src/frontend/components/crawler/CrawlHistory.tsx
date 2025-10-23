@@ -22,6 +22,7 @@ interface CrawlHistoryItem {
     overallScore: number;
     analysisTimestamp: string;
   } | null;
+  isReused?: boolean;
 }
 
 interface CrawlHistoryProps {
@@ -155,7 +156,14 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
                   {formatDate(item.session.startedAt)}
                 </p>
               </div>
-              {getStatusBadge(item.session.status)}
+              <div className="flex gap-2 items-start">
+                {getStatusBadge(item.session.status)}
+                {item.isReused && (
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-amber-600 text-white whitespace-nowrap">
+                    ⚡ Reused
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 mb-3">
@@ -165,7 +173,7 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
               </div>
               <div className="stat-box bg-gray-900 rounded p-2">
                 <p className="text-xs text-gray-400">Duration</p>
-                <p className="text-xl font-bold text-white">{formatDuration(item.session.duration)}</p>
+                <p className="text-xl font-bold text-white">{(item.session.duration)+ "s"}</p>
               </div>
             </div>
 

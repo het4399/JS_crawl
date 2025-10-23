@@ -117,4 +117,35 @@ router.get('/health', async (req, res) => {
     }
 });
 
+// Retrieve stored AEO analysis results by session ID
+router.get('/results/:sessionId',
+    authenticateUser,
+    async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const db = await import('../database/DatabaseService.js').then(m => m.getDatabase());
+        
+        const aeoResult = db.getAeoAnalysisResultBySessionId(parseInt(sessionId, 10));
+        
+        if (!aeoResult) {
+            return res.status(404).json({ 
+                error: 'No AEO analysis found for this session',
+                sessionId 
+            });
+        }
+        
+        logger.info('Retrieved AEO analysis results', { sessionId });
+        res.json({
+            success: true,
+            results: aeoResult
+        });
+    } catch (error) {
+        logger.error('Error retrieving AEO analysis results:', error);
+        res.status(500).json({ 
+            error: 'Failed to retrieve AEO analysis results', 
+            details: (error as Error).message 
+        });
+    }
+});
+
 export default router;

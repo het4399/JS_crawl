@@ -136,6 +136,56 @@ const AppWithAuth: React.FC = () => {
         : await apiService.analyzeUrl(url.trim());
       
       setResult(analysisResult);
+      
+      // If this was a reused session, extract and populate the session data
+      if (runCrawl && (analysisResult as any).data) {
+        const data = (analysisResult as any).data;
+        
+        // Set logs from reused session
+        if ((analysisResult as any).logs && Array.isArray((analysisResult as any).logs)) {
+          setLogs((analysisResult as any).logs.map((log: any) => log.message || log));
+        }
+        
+        // Handle both array and object responses
+        if (Array.isArray(data)) {
+          // data is array - use it directly and extract totalPages/session from analysisResult
+          const sessionPages = data
+            .filter((item: any) => item.resourceType === 'page')
+            .map((page: any) => page.url);
+          
+          setPages(sessionPages);
+          setPageCount((analysisResult as any).totalPages || sessionPages.length);
+          
+          // Set crawl stats from analysisResult
+          if ((analysisResult as any).session?.duration) {
+            setCrawlStats({
+              count: (analysisResult as any).totalPages || sessionPages.length,
+              duration: (analysisResult as any).session.duration || 0,
+              pagesPerSecond: ((analysisResult as any).totalPages || sessionPages.length) && (analysisResult as any).session.duration
+                ? parseFloat((((analysisResult as any).totalPages || sessionPages.length) / ((analysisResult as any).session.duration / 1000)).toFixed(2))
+                : 0
+            });
+          }
+        } else if (data.data && Array.isArray(data.data)) {
+          // data is object with data property
+          const sessionPages = data.data
+            .filter((item: any) => item.resourceType === 'page')
+            .map((page: any) => page.url);
+          
+          setPages(sessionPages);
+          setPageCount(data.totalPages || sessionPages.length);
+          
+          if (data.session?.duration) {
+            setCrawlStats({
+              count: data.totalPages || sessionPages.length,
+              duration: data.session.duration || 0,
+              pagesPerSecond: (data.totalPages || sessionPages.length) && data.session.duration
+                ? parseFloat(((data.totalPages || sessionPages.length) / (data.session.duration / 1000)).toFixed(2))
+                : 0
+            });
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to analyze URL');
     } finally {

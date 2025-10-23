@@ -67,9 +67,9 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   // Use real data from analysis result or fallback to defaults
   const scores: AEOScore = result ? {
     overall: Math.round(result.overall_score || 0),
-    ai_presence: Math.round(result.detailed_analysis?.ai_presence?.score || 0),
-    competitor_landscape: Math.round(result.detailed_analysis?.competitor_analysis?.score || 0),
-    strategy_review: Math.round(result.detailed_analysis?.answerability?.score || 0)
+    ai_presence: Math.round(result.module_scores?.ai_presence || result.detailed_analysis?.ai_presence?.score || 0),
+    competitor_landscape: Math.round(result.module_scores?.competitor_analysis || result.detailed_analysis?.competitor_analysis?.score || 0),
+    strategy_review: Math.round(result.module_scores?.answerability || result.detailed_analysis?.answerability?.score || 0)
   } : {
     overall: 40,
     ai_presence: 65,

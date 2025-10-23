@@ -437,6 +437,29 @@ app.post('/crawl',
 
     const userId = req.user!.userId; // Get authenticated user ID
 
+    // Check if a completed session already exists for this URL
+    let existingSession = null;
+    try {
+        const db = getDatabase();
+        existingSession = db.getSessionByUrl(safeUrl);
+        
+        // If session exists, always reuse it (regardless of owner)
+        if (existingSession) {
+            db.shareSessionWithUser(existingSession.id, userId);
+            logger.info('Session reused', { sessionId: existingSession.id, userId, url: safeUrl });
+            
+            return res.status(200).json({ 
+                ok: true, 
+                reuseMode: true, 
+                sessionId: existingSession.id, 
+                url: safeUrl,
+                message: `Reusing crawl data from ${existingSession.completedAt ? new Date(existingSession.completedAt).toLocaleString() : 'earlier'}`
+            });
+        }
+    } catch (e) {
+        logger.warn('Failed to check for existing session', e as Error);
+    }
+
     // Block manual crawl if the same URL is already running FOR THIS USER
     try {
         const db = getDatabase();

@@ -106,6 +106,92 @@ class ApiService {
           throw new Error(errorData.error || errorData.message || 'Crawler failed to start');
         }
 
+        const crawlData = await crawlResponse.json();
+        
+        // Handle reused session - skip to fetching existing data
+        if (crawlData.reuseMode && crawlData.sessionId) {
+          console.log(`Session reused! Fetching existing data for sessionId: ${crawlData.sessionId}`);
+          
+          // Fetch existing session data
+          const sessionResponse = await fetch(`${this.baseURL}/api/data/list?sessionId=${crawlData.sessionId}`, {
+            headers: this.getAuthHeaders(),
+            credentials: 'include'
+          });
+          
+          if (!sessionResponse.ok) {
+            throw new Error('Failed to fetch reused session data');
+          }
+          
+          const sessionData = await sessionResponse.json();
+          console.log('Session data received:', sessionData);
+          
+          // Fetch AEO results from the original crawl session
+          let aeoData = null;
+          if (sessionData.session?.id) {
+            try {
+              const aeoResponse = await fetch(`${this.baseURL}/aeo/results/${sessionData.session.id}`, {
+                headers: this.getAuthHeaders(),
+                credentials: 'include'
+              });
+              if (aeoResponse.ok) {
+                aeoData = await aeoResponse.json();
+              }
+            } catch (error) {
+              console.log('No AEO data available for session');
+            }
+          }
+          
+          // Return in same format as normal crawl response so dashboard populates correctly
+          const result = {
+            success: true,
+            url: url.trim(),
+            session_id: crawlData.sessionId,
+            grade: aeoData?.results?.grade || 'N/A',
+            grade_color: aeoData?.results?.gradeColor || '#666666',
+            overall_score: aeoData?.results?.overallScore || 0,
+            module_scores: aeoData?.results?.moduleScores || {
+              ai_presence: 0,
+              competitor_analysis: 0,
+              knowledge_base: 0,
+              answerability: 0,
+              crawler_accessibility: 0
+            },
+            module_weights: aeoData?.results?.moduleWeights || {
+              ai_presence: 0,
+              competitor: 0,
+              strategy_review: 0
+            },
+            detailed_analysis: aeoData?.results?.detailedAnalysis || {
+              ai_presence: {},
+              competitor_analysis: {},
+              knowledge_base: {},
+              answerability: {},
+              crawler_accessibility: {}
+            },
+            structured_data: aeoData?.results?.structuredData || {
+              total_schemas: 0,
+              valid_schemas: 0,
+              invalid_schemas: 0,
+              schema_types: [],
+              coverage_score: 0,
+              quality_score: 0,
+              completeness_score: 0,
+              seo_relevance_score: 0,
+              details: {}
+            },
+            all_recommendations: aeoData?.results?.recommendations || [],
+            errors: aeoData?.results?.errors || [],
+            warnings: aeoData?.results?.warnings || [],
+            analysis_timestamp: aeoData?.results?.analysisTimestamp || new Date().toISOString(),
+            run_id: aeoData?.results?.runId || '',
+            data: sessionData.data || sessionData,  // Array of pages/resources
+            // Spread all the session metadata
+            ...sessionData
+          } as AnalysisResult;
+          console.log('Returning reused result:', result);
+          return result;
+        }
+
         // Then get AEO analysis for the main URL
         console.log(`Getting AEO analysis for: ${url}`);
         

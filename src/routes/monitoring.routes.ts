@@ -437,8 +437,38 @@ router.get('/data/sessions', authenticateUser, (req, res) => {
     const scheduleId = req.query.scheduleId ? parseInt(req.query.scheduleId as string) : undefined;
     const userId = req.user?.userId; // Filter by authenticated user
 
-    const sessions = db.getCrawlSessions(limit, offset, scheduleId, userId);
-    res.json({ sessions, paging: { limit, offset, count: sessions.length } });
+        // Query for both owned and shared sessions
+        const query = `
+        SELECT DISTINCT cs.id, cs.start_url, cs.allow_subdomains, cs.max_concurrency,
+               cs.mode, cs.schedule_id, cs.user_id, cs.started_at, cs.completed_at, 
+               cs.total_pages, cs.total_resources, cs.duration, cs.status
+        FROM crawl_sessions cs
+        LEFT JOIN session_shares ss ON cs.id = ss.session_id
+        WHERE cs.user_id = ? OR ss.user_id = ?
+        ORDER BY COALESCE(cs.completed_at, cs.started_at) DESC
+        LIMIT ? OFFSET ?
+      `;
+      
+      const stmt = db.getDb().prepare(query);
+      const rows = stmt.all(userId, userId, limit, offset) as any[];
+      
+      const sessions = rows.map(row => ({
+        id: row.id,
+        startUrl: row.start_url,
+        allowSubdomains: Boolean(row.allow_subdomains),
+        maxConcurrency: row.max_concurrency,
+        mode: row.mode,
+        scheduleId: row.schedule_id,
+        userId: row.user_id,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        totalPages: row.total_pages,
+        totalResources: row.total_resources,
+        duration: row.duration,
+        status: row.status
+      }));
+  
+      res.json({ sessions, paging: { limit, offset, count: sessions.length } });
   } catch (error) {
     logger.error('Failed to list sessions', error as Error);
     res.status(500).json({ error: 'Failed to list sessions' });

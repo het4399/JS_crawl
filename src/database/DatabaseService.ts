@@ -260,12 +260,27 @@ export class DatabaseService {
                 max_concurrency INTEGER NOT NULL,
                 mode TEXT NOT NULL,
                 schedule_id INTEGER,
+                user_id INTEGER,
                 started_at TEXT NOT NULL,
                 completed_at TEXT,
                 total_pages INTEGER DEFAULT 0,
                 total_resources INTEGER DEFAULT 0,
                 duration INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'running'
+                status TEXT DEFAULT 'running',
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        `);
+
+        // Create session_shares table - tracks users who access shared sessions
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS session_shares (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                accessed_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES crawl_sessions (id),
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(session_id, user_id)
             )
         `);
 
@@ -2580,14 +2595,45 @@ export class DatabaseService {
     getUserCrawlSessionsWithResults(userId: number, limit: number = 50, offset: number = 0): Array<{
         session: any;
         aeoResult: any | null;
+        isReused?: boolean;
     }> {
-        const sessions = this.getCrawlSessions(limit, offset, undefined, userId);
+        // Get sessions owned by user + sessions shared with user
+        const stmt = this.db.prepare(`
+            SELECT DISTINCT cs.*, 
+                   CASE WHEN cs.user_id != ? THEN 1 ELSE 0 END as is_reused
+            FROM crawl_sessions cs
+            LEFT JOIN session_shares ss ON cs.id = ss.session_id AND ss.user_id = ?
+            WHERE cs.user_id = ? OR ss.user_id = ?
+            ORDER BY COALESCE(cs.completed_at, cs.started_at) DESC
+            LIMIT ? OFFSET ?
+        `);
+
+        const rows = stmt.all(userId, userId, userId, userId, limit, offset) as any[];
         
-        return sessions.map(session => {
+        return rows.map(row => {
+            const session = {
+                id: row.id,
+                startUrl: row.start_url,
+                allowSubdomains: Boolean(row.allow_subdomains),
+                maxConcurrency: row.max_concurrency,
+                mode: row.mode,
+                scheduleId: row.schedule_id,
+                userId: row.user_id,
+                startedAt: row.started_at,
+                completedAt: row.completed_at,
+                totalPages: row.total_pages,
+                totalResources: row.total_resources,
+                duration: row.duration,
+                status: row.status
+            };
+
             const aeoResult = this.getAeoAnalysisResultBySessionId(session.id);
+            const isReused = Boolean(row.is_reused);
+
             return {
                 session,
-                aeoResult
+                aeoResult,
+                isReused
             };
         });
     }
@@ -2756,6 +2802,84 @@ export class DatabaseService {
 
         const stmt = this.db.prepare(query);
         return stmt.all(...params) as any[];
+    }
+
+    // Session Sharing Methods
+    getSessionByUrl(startUrl: string): CrawlSession | null {
+        const query = `
+            SELECT * FROM crawl_sessions 
+            WHERE start_url = ? AND status = 'completed'
+            ORDER BY completed_at DESC 
+            LIMIT 1
+        `;
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(startUrl) as any;
+        if (!row) return null;
+        return {
+            id: row.id,
+            startUrl: row.start_url,
+            allowSubdomains: Boolean(row.allow_subdomains),
+            maxConcurrency: row.max_concurrency,
+            mode: row.mode,
+            scheduleId: row.schedule_id,
+            userId: row.user_id,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            totalPages: row.total_pages,
+            totalResources: row.total_resources,
+            duration: row.duration,
+            status: row.status
+        };
+    }
+
+    shareSessionWithUser(sessionId: number, userId: number): void {
+        const stmt = this.db.prepare(`
+            INSERT OR IGNORE INTO session_shares (session_id, user_id, accessed_at)
+            VALUES (?, ?, ?)
+        `);
+        stmt.run(sessionId, userId, new Date().toISOString());
+    }
+
+    getUserCrawlHistoryWithOwner(userId: number, limit: number = 50, offset: number = 0): Array<{
+        session: any;
+        aeoResult: any | null;
+    }> {
+        // Get sessions owned by user + sessions shared with user
+        const stmt = this.db.prepare(`
+            SELECT DISTINCT cs.*
+            FROM crawl_sessions cs
+            LEFT JOIN session_shares ss ON cs.id = ss.session_id AND ss.user_id = ?
+            WHERE cs.user_id = ? OR ss.user_id = ?
+            ORDER BY COALESCE(cs.completed_at, cs.started_at) DESC
+            LIMIT ? OFFSET ?
+        `);
+
+        const rows = stmt.all(userId, userId, userId, limit, offset) as any[];
+        
+        return rows.map(row => {
+            const session = {
+                id: row.id,
+                startUrl: row.start_url,
+                allowSubdomains: Boolean(row.allow_subdomains),
+                maxConcurrency: row.max_concurrency,
+                mode: row.mode,
+                scheduleId: row.schedule_id,
+                userId: row.user_id,
+                startedAt: row.started_at,
+                completedAt: row.completed_at,
+                totalPages: row.total_pages,
+                totalResources: row.total_resources,
+                duration: row.duration,
+                status: row.status
+            };
+
+            const aeoResult = this.getAeoAnalysisResultBySessionId(session.id);
+
+            return {
+                session,
+                aeoResult
+            };
+        });
     }
 }
 
