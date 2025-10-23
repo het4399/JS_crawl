@@ -8,6 +8,7 @@ from .competitor_analysis import CompetitorAnalysisService
 from .knowledge_base import KnowledgeBaseService
 from .answerability import AnswerabilityService
 from .crawler_accessibility import CrawlerAccessibilityService
+from .structured_data import StructuredDataService
 
 class AEOServiceOrchestrator:
     """Main orchestrator for all AEO analysis services"""
@@ -18,6 +19,7 @@ class AEOServiceOrchestrator:
         self.knowledge_base_service = KnowledgeBaseService()
         self.answerability_service = AnswerabilityService()
         self.crawler_accessibility_service = CrawlerAccessibilityService()
+        self.structured_data_service = StructuredDataService()
     
     def analyze_ai_presence(self, url: str) -> dict:
         """Analyze AI presence and accessibility"""
@@ -38,6 +40,10 @@ class AEOServiceOrchestrator:
     def analyze_crawler_accessibility(self, url: str, html_content: str) -> dict:
         """Analyze crawler accessibility"""
         return self.crawler_accessibility_service.analyze_crawler_accessibility(url, html_content)
+    
+    def analyze_structured_data(self, url: str, html_content: str = None) -> dict:
+        """Analyze structured data"""
+        return self.structured_data_service.analyze_structured_data(url, html_content)
     
     def run_complete_analysis(self, url: str, html_content: str = None, competitor_urls: list = None) -> dict:
         """Run complete AEO analysis"""
@@ -61,7 +67,8 @@ class AEOServiceOrchestrator:
                 'ai_presence': self.analyze_ai_presence(url),
                 'knowledge_base': self.analyze_knowledge_base(url, html_content),
                 'answerability': self.analyze_answerability(url, html_content),
-                'crawler_accessibility': self.analyze_crawler_accessibility(url, html_content)
+                'crawler_accessibility': self.analyze_crawler_accessibility(url, html_content),
+                'structured_data': self.analyze_structured_data(url, html_content)
             }
             
             # Add competitor analysis if URLs provided
@@ -92,7 +99,8 @@ class AEOServiceOrchestrator:
                     'competitor_analysis': results.get('competitor_analysis', {}),
                     'knowledge_base': results.get('knowledge_base', {}),
                     'answerability': results.get('answerability', {}),
-                    'crawler_accessibility': results.get('crawler_accessibility', {})
+                    'crawler_accessibility': results.get('crawler_accessibility', {}),
+                    'structured_data': results.get('structured_data', {})
                 },
                 'recommendations': self._generate_recommendations(results),
                 'analysis_timestamp': __import__('datetime').datetime.now().isoformat()

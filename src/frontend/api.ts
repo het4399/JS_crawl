@@ -12,6 +12,7 @@ export interface AnalysisResult {
     knowledge_base: number;
     answerability: number;
     crawler_accessibility: number;
+    structured_data?: number;
   };
   module_weights?: {
     ai_presence: number;
@@ -24,6 +25,7 @@ export interface AnalysisResult {
     knowledge_base: any;
     answerability: any;
     crawler_accessibility: any;
+    structured_data?: any;
   };
   structured_data?: {
     total_schemas: number;

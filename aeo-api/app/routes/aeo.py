@@ -16,6 +16,10 @@ class AnalyzeResponse(BaseModel):
     results: dict
     error: Optional[str] = None
 
+class StructuredDataRequest(BaseModel):
+    url: str
+    html_content: Optional[str] = None
+
 # Initialize service orchestrator
 aeo_orchestrator = AEOServiceOrchestrator()
 
@@ -23,7 +27,8 @@ aeo_orchestrator = AEOServiceOrchestrator()
 async def analyze_aeo(request: AnalyzeRequest):
     """
     AEOCHECKER analysis endpoint
-    Analyzes AI presence, competitor landscape, knowledge base, answerability, and crawler accessibility
+    Analyzes AI presence, competitor landscape, knowledge base, answerability, 
+    crawler accessibility, and structured data
     """
     try:
         # Add protocol if missing
@@ -54,11 +59,45 @@ async def analyze_aeo(request: AnalyzeRequest):
     except Exception as e:
         return AnalyzeResponse(success=False, results={}, error=str(e))
 
+@router.post("/analyze-structured-data", response_model=AnalyzeResponse)
+async def analyze_structured_data(request: StructuredDataRequest):
+    """
+    Analyze structured data (JSON-LD, Microdata, RDFa) for a given URL
+    """
+    try:
+        # Add protocol if missing
+        url = request.url
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Run structured data analysis
+        logging.info(f"Running structured data analysis for {url}")
+        results = aeo_orchestrator.analyze_structured_data(
+            url=url,
+            html_content=request.html_content
+        )
+        
+        if 'error' in results:
+            raise HTTPException(status_code=400, detail=results['error'])
+        
+        return AnalyzeResponse(success=True, results=results)
+        
+    except Exception as e:
+        return AnalyzeResponse(success=False, results={}, error=str(e))
+
 @router.get("/health")
 async def health_check():
     """AEOCHECKER health check"""
     return {
         "status": "healthy",
         "service": "AEOCHECKER - AI Search Engine Optimization Analyzer",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "features": [
+            "AI Presence Analysis",
+            "Structured Data Analysis",
+            "Competitor Analysis",
+            "Knowledge Base Analysis",
+            "Answerability Analysis",
+            "Crawler Accessibility Analysis"
+        ]
     }

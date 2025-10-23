@@ -12,6 +12,7 @@ interface AEOScore {
   ai_presence: number;
   competitor_landscape: number;
   strategy_review: number;
+  structured_data?: number;
 }
 
 interface AIPlatform {
@@ -69,12 +70,21 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     overall: Math.round(result.overall_score || 0),
     ai_presence: Math.round(result.module_scores?.ai_presence || result.detailed_analysis?.ai_presence?.score || 0),
     competitor_landscape: Math.round(result.module_scores?.competitor_analysis || result.detailed_analysis?.competitor_analysis?.score || 0),
-    strategy_review: Math.round(result.module_scores?.answerability || result.detailed_analysis?.answerability?.score || 0)
+    strategy_review: Math.round(
+      (
+        (result.module_scores?.answerability || 0) +
+        (result.module_scores?.knowledge_base || 0) +
+        (result.module_scores?.structured_data || 0) +
+        (result.module_scores?.crawler_accessibility || 0)
+      ) / 4
+    ),
+    structured_data: Math.round(result.module_scores?.structured_data || result.detailed_analysis?.structured_data?.score || 0)
   } : {
-    overall: 40,
-    ai_presence: 65,
+    overall: 0,
+    ai_presence: 0,
     competitor_landscape: 0,
-    strategy_review: 62
+    strategy_review: 0,
+    structured_data: 0
   };
 
   // Dynamically generate AI platforms from API response
@@ -162,10 +172,10 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     if (!result || !result.module_scores) {
       // Fallback to demo data if no results
       return [
-        { name: 'Answerability', score: 75, status: 'LIVE', color: 'green' },
-        { name: 'Knowledge Base', score: 31, status: 'LIVE', color: 'red' },
-        { name: 'Structured Data', score: 55, status: 'LIVE', color: 'orange' },
-        { name: 'AI Crawler Accessibility', score: 87, status: 'LIVE', color: 'green' }
+        { name: 'Answerability', score: 0, status: 'LIVE', color: 'green' },
+        { name: 'Knowledge Base', score: 0, status: 'LIVE', color: 'red' },
+        { name: 'Structured Data', score: 0, status: 'LIVE', color: 'orange' },
+        { name: 'AI Crawler Accessibility', score: 0, status: 'LIVE', color: 'green' }
       ];
     }
 
@@ -199,9 +209,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
       });
     }
 
-    // NOTE: Structured Data is not returned by the API
-    // The backend doesn't have a dedicated structured data analysis module
-    // It might be part of knowledge_base or needs to be implemented separately
+    // Structured Data
+    if (result.module_scores.structured_data !== undefined) {
+      const score = Math.round(result.module_scores.structured_data);
+      metrics.push({
+        name: 'Structured Data',
+        score: score,
+        status: 'LIVE',
+        color: getColorForScore(score)
+      });
+    }
 
     // AI Crawler Accessibility
     if (result.module_scores.crawler_accessibility !== undefined) {
