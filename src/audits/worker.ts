@@ -64,18 +64,34 @@ async function worker(concurrency: number, device: DeviceStrategy) {
 
 async function main() {
     const cfg = loadConfig();
-    const device: DeviceStrategy = cfg.deviceStrategy?.mobile ? 'mobile' : 'desktop';
     const concurrency: number = Number(process.env.PSI_CONCURRENCY) || Number(cfg.concurrency) || 12;
+    
+    // Process both mobile and desktop if enabled
+    const devices: DeviceStrategy[] = [];
+    if (cfg.deviceStrategy?.mobile) devices.push('mobile');
+    if (cfg.deviceStrategy?.desktopSamplePercent > 0) devices.push('desktop');
+    
+    if (devices.length === 0) {
+        devices.push('desktop'); // fallback
+    }
+    
     // eslint-disable-next-line no-console
-    console.log(`[audit-worker] starting with concurrency=${concurrency}, device=${device}`);
+    console.log(`[audit-worker] starting with concurrency=${concurrency}, devices=[${devices.join(', ')}]`);
+    
     if (String(process.env.AUDITS_DEBUG || '').toLowerCase() === 'true') {
         console.log('[audit-worker] debug on. timeouts/retries:', {
             timeoutMs: Number(process.env.PSI_TIMEOUT_MS) || Number(cfg.timeouts?.requestMs) || 15000,
             retries: Number(process.env.PSI_RETRIES) || Number(cfg.retries?.maxAttempts) || 2,
-            backoffBaseMs: Number(process.env.PSI_BACKOFF_BASE_MS) || Number(cfg.retries?.baseDelayMs) || 500,
+            baseDelayMs: Number(process.env.PSI_BACKOFF_BASE_MS) || Number(cfg.retries?.baseDelayMs) || 500,
         });
     }
-    await worker(concurrency, device);
+    
+    // Process each device
+    for (const device of devices) {
+        // eslint-disable-next-line no-console
+        console.log(`[audit-worker] processing device: ${device}`);
+        await worker(concurrency, device);
+    }
 }
 
 main().catch((e) => {

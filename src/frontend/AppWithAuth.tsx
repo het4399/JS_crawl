@@ -158,11 +158,12 @@ const AppWithAuth: React.FC = () => {
           
           // Set crawl stats from analysisResult
           if ((analysisResult as any).session?.duration) {
+            const totalItems = ((analysisResult as any).totalPages || 0) + ((analysisResult as any).totalResources || 0);
             setCrawlStats({
-              count: (analysisResult as any).totalPages || sessionPages.length,
+              count: totalItems,
               duration: (analysisResult as any).session.duration || 0,
-              pagesPerSecond: ((analysisResult as any).totalPages || sessionPages.length) && (analysisResult as any).session.duration
-                ? parseFloat((((analysisResult as any).totalPages || sessionPages.length) / ((analysisResult as any).session.duration / 1000)).toFixed(2))
+              pagesPerSecond: totalItems && (analysisResult as any).session.duration
+                ? parseFloat((totalItems / (analysisResult as any).session.duration).toFixed(2))
                 : 0
             });
           }
@@ -176,11 +177,12 @@ const AppWithAuth: React.FC = () => {
           setPageCount(data.totalPages || sessionPages.length);
           
           if (data.session?.duration) {
+            const totalItems = (data.totalPages || 0) + (data.totalResources || 0);
             setCrawlStats({
-              count: data.totalPages || sessionPages.length,
+              count: totalItems,
               duration: data.session.duration || 0,
-              pagesPerSecond: (data.totalPages || sessionPages.length) && data.session.duration
-                ? parseFloat(((data.totalPages || sessionPages.length) / (data.session.duration / 1000)).toFixed(2))
+              pagesPerSecond: totalItems && data.session.duration
+                ? parseFloat((totalItems / data.session.duration).toFixed(2))
                 : 0
             });
           }
@@ -224,11 +226,12 @@ const AppWithAuth: React.FC = () => {
       
       // Set crawl stats if session data available
       if (sessionData.session) {
+        const totalItems = (sessionData.totalPages || 0) + (sessionData.totalResources || 0);
         setCrawlStats({
-          count: sessionData.totalPages,
+          count: totalItems,
           duration: sessionData.session.duration || 0,
           pagesPerSecond: sessionData.session.duration 
-            ? parseFloat((sessionData.totalPages / (sessionData.session.duration / 1000)).toFixed(2))
+            ? parseFloat((totalItems / sessionData.session.duration).toFixed(2))
             : 0
         });
       } else {

@@ -186,12 +186,12 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
                       {item.aeoResult.overallScore.toFixed(1)}%
                     </p>
                   </div>
-                  <div
+                  {/* <div
                     className="grade-badge text-3xl font-bold px-4 py-2 rounded"
                     style={{ backgroundColor: item.aeoResult.gradeColor }}
                   >
                     {item.aeoResult.grade}
-                  </div>
+                  </div> */}
                 </div>
               </div>
             )}

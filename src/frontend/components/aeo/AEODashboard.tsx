@@ -90,11 +90,11 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   // Dynamically generate AI platforms from API response
   const getAIPlatforms = (): AIPlatform[] => {
     if (!result || !result.detailed_analysis?.ai_presence) {
-      // Fallback to demo data
+      // If no result available, show 0 scores instead of demo data
       return [
-        { name: 'ChatGPT', icon: 'A', score: 85, status: 'LIVE' },
-        { name: 'Gemini', icon: 'G', score: 85, status: 'LIVE' },
-        { name: 'Claude', icon: 'C', score: 85, status: 'LIVE' }
+        { name: 'ChatGPT', icon: 'A', score: 0, status: 'OFFLINE' },
+        { name: 'Gemini', icon: 'G', score: 0, status: 'OFFLINE' },
+        { name: 'Claude', icon: 'C', score: 0, status: 'OFFLINE' }
       ];
     }
 
@@ -114,7 +114,7 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     };
 
     // Check if the API provides platform-specific data
-    if (aiData.platforms) {
+    if (aiData.platforms && typeof aiData.platforms === 'object') {
       Object.entries(aiData.platforms).forEach(([name, data]: [string, any]) => {
         platforms.push({
           name: name,
@@ -125,12 +125,32 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
       });
     }
 
-    // If no platforms data, return fallback
-    return platforms.length > 0 ? platforms : [
-      { name: 'ChatGPT', icon: 'A', score: 85, status: 'LIVE' },
-      { name: 'Gemini', icon: 'G', score: 85, status: 'LIVE' },
-      { name: 'Claude', icon: 'C', score: 85, status: 'LIVE' }
-    ];
+    // Check if platform scores are in ai_understanding
+    if (aiData.ai_understanding && typeof aiData.ai_understanding === 'object') {
+      if (aiData.ai_understanding.platform_scores && typeof aiData.ai_understanding.platform_scores === 'object') {
+        Object.entries(aiData.ai_understanding.platform_scores).forEach(([name, data]: [string, any]) => {
+          if (!platforms.find(p => p.name === name)) {
+            platforms.push({
+              name: name,
+              icon: platformIcons[name] || name.charAt(0).toUpperCase(),
+              score: Math.round(data.score || 0),
+              status: data.status || 'LIVE'
+            });
+          }
+        });
+      }
+    }
+
+    // If no platforms data found in API, return 0 scores
+    if (platforms.length === 0) {
+      return [
+        { name: 'ChatGPT', icon: 'A', score: 0, status: 'OFFLINE' },
+        { name: 'Gemini', icon: 'G', score: 0, status: 'OFFLINE' },
+        { name: 'Claude', icon: 'C', score: 0, status: 'OFFLINE' }
+      ];
+    }
+
+    return platforms;
   };
 
   // Dynamically generate competitors from API response
@@ -458,7 +478,7 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                       </div>
                       <div className="stat-box">
                         <div className="stat-value">{crawlStats.pagesPerSecond.toFixed(1)}</div>
-                        <div className="stat-label">Pages/Sec</div>
+                        <div className="stat-label">Items/Sec</div>
                       </div>
                     </>
                   )}

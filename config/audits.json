@@ -1,17 +1,17 @@
 {
   "provider": "psi",
   "deviceStrategy": {
-    "mobile": false,
-    "desktopSamplePercent": 0
+    "mobile": true,
+    "desktopSamplePercent": 100
   },
-  "concurrency": 12,
+  "concurrency": 50,
   "timeouts": {
-    "requestMs": 60000
+    "requestMs": 35000
   },
   "retries": {
     "maxAttempts": 2,
-    "baseDelayMs": 500,
-    "maxDelayMs": 4000
+    "baseDelayMs": 150,
+    "maxDelayMs": 1500
   },
   "freshnessTtlHours": 24,
   "urlEligibility": {
@@ -27,6 +27,10 @@
   "output": {
     "storeParsedJson": true,
     "storeRawPayloadDays": 7
+  },
+  "performance": {
+    "batchSize": 50,
+    "requestsPerSecond": 100
   }
 }
 

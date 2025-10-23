@@ -3,6 +3,8 @@ import { fetchPsi, DeviceStrategy } from './psiClient.js';
 import { saveAudit } from './store.js';
 import { CronParser } from '../scheduler/CronParser.js';
 import { getDatabase } from '../database/DatabaseService.js';
+import fs from 'fs';
+import path from 'path';
 
 export interface AuditSchedule {
     id: number;
@@ -40,10 +42,11 @@ export class AuditScheduler {
     private intervalId: NodeJS.Timeout | null = null;
     private activeRuns: Map<number, Promise<void>> = new Map();
     private config = {
-        checkIntervalMs: 60000, // Check every minute
-        maxConcurrentRuns: 2, // Lower than crawl scheduler since audits are more resource intensive
+        checkIntervalMs: 30000, // Check every 30 seconds (was 60)
+        maxConcurrentRuns: 4, // Increased from 2 to run more audits in parallel
         retryFailedSchedules: true,
-        retryDelayMs: 300000 // 5 minutes
+        retryDelayMs: 300000, // 5 minutes
+        urlBatchSize: 25 // Larger batches for better throughput
     };
 
     /**
@@ -151,10 +154,10 @@ export class AuditScheduler {
         }
 
         if (updates.urls) {
-            updates.urls = updates.urls; // Will be JSON stringified in database
+            (updates as any).urls = JSON.stringify(updates.urls);
         }
         
-        this.db.updateAuditSchedule(id, updates);
+        this.db.updateAuditSchedule(id, updates as any);
         this.logger.info('Audit schedule updated', { scheduleId: id, updates });
     }
 
@@ -267,11 +270,28 @@ export class AuditScheduler {
         let executionId: number | null = null;
         
         try {
+            // Load devices from config (ignore schedule.device, use config instead)
+            let devices: DeviceStrategy[] = [];
+            try {
+                const configPath = path.resolve(process.cwd(), 'config', 'audits.json');
+                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                if (cfg.deviceStrategy?.mobile) devices.push('mobile');
+                if (cfg.deviceStrategy?.desktopSamplePercent > 0) devices.push('desktop');
+            } catch (e) {
+                // Fallback to schedule device if config not found
+                devices = [schedule.device];
+            }
+            
+            if (devices.length === 0) {
+                devices = [schedule.device]; // Final fallback
+            }
+            
             this.logger.info('Starting scheduled audit', { 
                 scheduleId: schedule.id, 
                 name: schedule.name,
                 urlsCount: schedule.urls.length,
-                device: schedule.device
+                devices: devices,
+                configDevices: devices.join(',')
             });
 
             // Record execution start
@@ -281,44 +301,47 @@ export class AuditScheduler {
             let urlsSuccessful = 0;
             let urlsFailed = 0;
             
-            // Process each URL
-            for (const url of schedule.urls) {
-                try {
-                    this.logger.debug(`Processing URL: ${url}`);
-                    
-                    const result = await fetchPsi(url, schedule.device, {
-                        timeoutMs: 60000, // 1 minute timeout for audits
-                        retries: 2,
-                        backoffBaseMs: 1000
-                    });
-                    
-                    const parsed = {
-                        url: result.url,
-                        device: result.device,
-                        runAt: result.runAt,
-                        field: result.field,
-                        lab: result.lab,
-                        psiReportUrl: result.psiReportUrl,
-                    };
-                    
-                    saveAudit(result.url, result.device, parsed, result.raw);
-                    urlsSuccessful++;
-                    
-                    this.logger.debug(`Audit completed for ${url}`, {
-                        lcp: result.lab?.LCP_ms,
-                        tbt: result.lab?.TBT_ms,
-                        cls: result.lab?.CLS
-                    });
-                    
-                } catch (error) {
-                    this.logger.error(`Audit failed for ${url}`, error as Error);
-                    urlsFailed++;
+            // Generate all audit tasks for both/all enabled devices
+            const auditTasks: Array<{ url: string; device: DeviceStrategy }> = [];
+            
+            for (const device of devices) {
+                for (const url of schedule.urls) {
+                    auditTasks.push({ url, device });
+                }
+            }
+            
+            this.logger.info(`Processing ${auditTasks.length} total audits (${schedule.urls.length} URLs × ${devices.length} device(s))`, { 
+                scheduleId: schedule.id,
+                devices: devices.join(',')
+            });
+            
+            // Process ALL audits in parallel batches
+            const batchSize = this.config.urlBatchSize;
+            for (let i = 0; i < auditTasks.length; i += batchSize) {
+                const batch = auditTasks.slice(i, i + batchSize);
+                
+                // Process entire batch in parallel (all devices mixed)
+                const batchResults = await Promise.allSettled(
+                    batch.map(task => this.auditUrlWithCache(task.url, task.device))
+                );
+                
+                for (const result of batchResults) {
+                    urlsProcessed++;
+                    if (result.status === 'fulfilled' && result.value.success) {
+                        urlsSuccessful++;
+                    } else {
+                        urlsFailed++;
+                        if (result.status === 'rejected') {
+                            this.logger.error(`Audit failed`, result.reason);
+                        }
+                    }
                 }
                 
-                urlsProcessed++;
-                
-                // Small delay between audits to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                this.logger.info(`Batch progress: ${i + batchSize}/${auditTasks.length}`, { 
+                    scheduleId: schedule.id,
+                    successful: urlsSuccessful,
+                    failed: urlsFailed
+                });
             }
             
             // Update execution as completed
@@ -425,6 +448,58 @@ export class AuditScheduler {
         });
         
         return executionId;
+    }
+
+    /**
+     * Audit a single URL with cache checking
+     */
+    private async auditUrlWithCache(url: string, device: 'mobile' | 'desktop'): Promise<{ success: boolean }> {
+        try {
+            // Check for cached result within TTL
+            const existingResult = this.db.getAuditResultsByUrl(url, device, 1)[0];
+            if (existingResult) {
+                const resultAge = Date.now() - new Date(existingResult.run_at).getTime();
+                const ttlMs = 24 * 60 * 60 * 1000; // 24 hours
+                
+                if (resultAge < ttlMs) {
+                    this.logger.debug(`Using cached audit for ${url}`, { 
+                        ageHours: (resultAge / (60 * 60 * 1000)).toFixed(1)
+                    });
+                    return { success: true };
+                }
+            }
+
+            this.logger.debug(`Fetching PSI audit for ${url}`);
+            const result = await fetchPsi(url, device, {
+                timeoutMs: 35000,
+                retries: 2,
+                backoffBaseMs: 150,
+                useRateLimiter: true
+            });
+            
+            const parsed = {
+                url: result.url,
+                device: result.device,
+                runAt: result.runAt,
+                field: result.field,
+                lab: result.lab,
+                psiReportUrl: result.psiReportUrl,
+            };
+            
+            saveAudit(result.url, result.device, parsed, result.raw);
+            
+            this.logger.debug(`Audit successful for ${url}`, {
+                lcp: result.lab?.LCP_ms,
+                tbt: result.lab?.TBT_ms,
+                cls: result.lab?.CLS,
+                score: result.lab?.performanceScore
+            });
+            
+            return { success: true };
+        } catch (error) {
+            this.logger.error(`Audit failed for ${url}`, error as Error);
+            return { success: false };
+        }
     }
 
     /**
