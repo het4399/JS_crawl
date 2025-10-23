@@ -35,8 +35,8 @@ export async function fetchPsi(
     url: string,
     device: DeviceStrategy,
     {
-        timeoutMs = 15000,
-        retries = 2,
+        timeoutMs = 10000,
+        retries = 1,
         backoffBaseMs = 500,
         apiKey = process.env.PSI_API_KEY,
     }: { timeoutMs?: number; retries?: number; backoffBaseMs?: number; apiKey?: string } = {}

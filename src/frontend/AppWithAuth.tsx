@@ -28,7 +28,7 @@ const AppWithAuth: React.FC = () => {
   const [allowSubdomains, setAllowSubdomains] = useState<boolean>(true);
   const [runAudits, setRunAudits] = useState<boolean>(false);
   const [auditDevice, setAuditDevice] = useState<'mobile' | 'desktop'>('desktop');
-  const [captureLinkDetails, setCaptureLinkDetails] = useState<boolean>(false);
+  const [captureLinkDetails, setCaptureLinkDetails] = useState<boolean>(true);
   
   // Live crawling state
   const [isCrawling, setIsCrawling] = useState<boolean>(false);
@@ -426,34 +426,12 @@ const AppWithAuth: React.FC = () => {
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={allowSubdomains}
-                        onChange={(e) => setAllowSubdomains(e.target.checked)}
-                        className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
-                        disabled={loading}
-                      />
-                      <span className="text-sm text-gray-300">🌐 Allow Subdomains</span>
-                    </label>
-
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
                         checked={runAudits}
                         onChange={(e) => setRunAudits(e.target.checked)}
                         className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
                         disabled={loading}
                       />
                       <span className="text-sm text-gray-300">🔍 Run Performance Audits</span>
-                    </label>
-
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={captureLinkDetails}
-                        onChange={(e) => setCaptureLinkDetails(e.target.checked)}
-                        className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
-                        disabled={loading}
-                      />
-                      <span className="text-sm text-gray-300">🔗 Link Analysis</span>
                     </label>
                   </div>
                 )}

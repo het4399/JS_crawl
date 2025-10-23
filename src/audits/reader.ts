@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getDatabase } from '../database/DatabaseService.js';
 
 export type AuditSummary = {
     id: string;
@@ -18,53 +19,60 @@ export type AuditSummary = {
 const BASE_DIR = path.resolve(process.cwd(), 'storage', 'audits');
 
 export function listRecent(device: 'mobile' | 'desktop' | 'all' = 'all', limit = 100): AuditSummary[] {
-    if (!fs.existsSync(BASE_DIR)) return [];
-    const deviceDirs = device === 'all' ? fs.readdirSync(BASE_DIR) : [device];
-    const records: AuditSummary[] = [];
-    for (const dev of deviceDirs) {
-        const devDir = path.join(BASE_DIR, dev);
-        if (!fs.existsSync(devDir) || !fs.statSync(devDir).isDirectory()) continue;
-        const days = fs.readdirSync(devDir).sort().reverse();
-        for (const day of days) {
-            const dayDir = path.join(devDir, day);
-            const files = fs.readdirSync(dayDir).filter((f) => f.endsWith('.json') && !f.endsWith('.raw.json'));
-            for (const f of files) {
-                try {
-                    const full = path.join(dayDir, f);
-                    const json = JSON.parse(fs.readFileSync(full, 'utf-8')) as any;
-                    const id = path.relative(BASE_DIR, full).replace(/\\/g, '/');
-                    records.push({
-                        id,
-                        url: json.url,
-                        device: json.device,
-                        runAt: json.runAt,
-                        LCP_ms: json.metrics?.lab?.LCP_ms ?? json.metrics?.field?.LCP_ms,
-                        TBT_ms: json.metrics?.lab?.TBT_ms,
-                        CLS: json.metrics?.lab?.CLS ?? json.metrics?.field?.CLS,
-                        FCP_ms: json.metrics?.lab?.FCP_ms,
-                        TTFB_ms: json.metrics?.lab?.TTFB_ms,
-                        performanceScore: json.metrics?.lab?.performanceScore,
-                        psiReportUrl: json.metrics?.psiReportUrl,
-                    });
-                } catch {
-                    // ignore bad files
-                }
-            }
-        }
+    const db = getDatabase();
+    
+    // Query from database
+    let results: any[];
+    if (device === 'all') {
+        results = db.getAuditResults(undefined, limit);
+    } else {
+        results = db.getAuditResults(device, limit);
     }
-    return records
-        .sort((a, b) => b.runAt.localeCompare(a.runAt))
-        .slice(0, limit);
+
+    // Convert to AuditSummary format
+    return results.map((row) => ({
+        id: `${row.id}`,
+        url: row.url,
+        device: row.device,
+        runAt: row.run_at,
+        LCP_ms: row.lcp_ms,
+        TBT_ms: row.tbt_ms,
+        CLS: row.cls,
+        FCP_ms: row.fcp_ms,
+        TTFB_ms: row.ttfb_ms,
+        performanceScore: row.performance_score,
+        psiReportUrl: row.psi_report_url
+    }));
 }
 
 export function getById(id: string): any | null {
-    const full = path.join(BASE_DIR, id);
-    if (!fs.existsSync(full)) return null;
-    try {
-        return JSON.parse(fs.readFileSync(full, 'utf-8'));
-    } catch {
-        return null;
+    const db = getDatabase();
+    const numId = parseInt(id, 10);
+    
+    if (!isNaN(numId)) {
+        const result = db.getAuditResultById(numId);
+        if (result) {
+            return {
+                url: result.url,
+                device: result.device,
+                runAt: result.run_at,
+                metrics: result.metrics_json ? JSON.parse(result.metrics_json) : {},
+                raw: result.raw_json ? JSON.parse(result.raw_json) : null
+            };
+        }
     }
+    
+    // Fallback: check legacy file storage for old audits
+    const full = path.join(BASE_DIR, id);
+    if (fs.existsSync(full)) {
+        try {
+            return JSON.parse(fs.readFileSync(full, 'utf-8'));
+        } catch {
+            return null;
+        }
+    }
+    
+    return null;
 }
 
 

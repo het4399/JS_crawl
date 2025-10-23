@@ -34,8 +34,8 @@ export class CrawlAuditIntegration {
             this.logger.debug(`Running audit for ${url} (${device})`);
             
             const result = await fetchPsi(url, device, {
-                timeoutMs: 60000, // 1 minute timeout
-                retries: 2,
+                timeoutMs: 45000, // 45 second timeout (reduced from 60)
+                retries: 1,
                 backoffBaseMs: 1000
             });
 

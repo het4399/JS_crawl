@@ -23,7 +23,7 @@ async function main() {
     const allowSubdomains = true;
     const maxConcurrency = 150;
     const perHostDelayMs = getEnvNumber('CRAWL_PER_HOST_DELAY_MS', 150);
-    const captureLinkDetails = getEnvBoolean('CAPTURE_LINK_DETAILS', false);
+    const captureLinkDetails = getEnvBoolean('CAPTURE_LINK_DETAILS', true);
     const denyParams = (process.env.DENY_PARAMS || 'utm_,session,sort,filter,ref,fbclid,gclid')
         .split(',')
         .map((s) => s.trim().toLowerCase())

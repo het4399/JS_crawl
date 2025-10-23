@@ -488,6 +488,26 @@ export class DatabaseService {
             )
         `);
 
+        // Create audit results table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS audit_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                device TEXT NOT NULL,
+                run_at TEXT NOT NULL,
+                lcp_ms INTEGER,
+                tbt_ms INTEGER,
+                cls REAL,
+                fcp_ms INTEGER,
+                ttfb_ms INTEGER,
+                performance_score INTEGER,
+                psi_report_url TEXT,
+                metrics_json TEXT,
+                raw_json TEXT,
+                created_at TEXT NOT NULL
+            )
+        `);
+
         // Create AEO analysis results table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS aeo_analysis_results (
@@ -2632,6 +2652,110 @@ export class DatabaseService {
             level: row.level,
             timestamp: row.timestamp
         }));
+    }
+
+    // Audit Results Methods
+    insertAuditResult(data: {
+        url: string;
+        device: 'mobile' | 'desktop';
+        run_at: string;
+        lcp_ms?: number;
+        tbt_ms?: number;
+        cls?: number;
+        fcp_ms?: number;
+        ttfb_ms?: number;
+        performance_score?: number;
+        psi_report_url?: string;
+        metrics_json?: Record<string, unknown>;
+        raw_json?: Record<string, unknown>;
+    }): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO audit_results 
+            (url, device, run_at, lcp_ms, tbt_ms, cls, fcp_ms, ttfb_ms, performance_score, psi_report_url, metrics_json, raw_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const timestamp = new Date().toISOString();
+        const result = stmt.run(
+            data.url,
+            data.device,
+            data.run_at,
+            data.lcp_ms ?? null,
+            data.tbt_ms ?? null,
+            data.cls ?? null,
+            data.fcp_ms ?? null,
+            data.ttfb_ms ?? null,
+            data.performance_score ?? null,
+            data.psi_report_url ?? null,
+            data.metrics_json ? JSON.stringify(data.metrics_json) : null,
+            data.raw_json ? JSON.stringify(data.raw_json) : null,
+            timestamp
+        );
+
+        return result.lastInsertRowid as number;
+    }
+
+    getAuditResults(device?: 'mobile' | 'desktop', limit: number = 100, offset: number = 0): Array<{
+        id: number;
+        url: string;
+        device: 'mobile' | 'desktop';
+        run_at: string;
+        lcp_ms?: number;
+        tbt_ms?: number;
+        cls?: number;
+        fcp_ms?: number;
+        ttfb_ms?: number;
+        performance_score?: number;
+        psi_report_url?: string;
+    }> {
+        let query = 'SELECT id, url, device, run_at, lcp_ms, tbt_ms, cls, fcp_ms, ttfb_ms, performance_score, psi_report_url FROM audit_results';
+        const params: any[] = [];
+
+        if (device) {
+            query += ' WHERE device = ?';
+            params.push(device);
+        }
+
+        query += ' ORDER BY run_at DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const stmt = this.db.prepare(query);
+        const rows = stmt.all(...params) as any[];
+
+        return rows.map(row => ({
+            id: row.id,
+            url: row.url,
+            device: row.device,
+            run_at: row.run_at,
+            lcp_ms: row.lcp_ms,
+            tbt_ms: row.tbt_ms,
+            cls: row.cls,
+            fcp_ms: row.fcp_ms,
+            ttfb_ms: row.ttfb_ms,
+            performance_score: row.performance_score,
+            psi_report_url: row.psi_report_url
+        }));
+    }
+
+    getAuditResultById(id: number): any | null {
+        const stmt = this.db.prepare('SELECT * FROM audit_results WHERE id = ?');
+        return stmt.get(id);
+    }
+
+    getAuditResultsByUrl(url: string, device?: 'mobile' | 'desktop', limit: number = 10): Array<any> {
+        let query = 'SELECT * FROM audit_results WHERE url = ?';
+        const params: any[] = [url];
+
+        if (device) {
+            query += ' AND device = ?';
+            params.push(device);
+        }
+
+        query += ' ORDER BY run_at DESC LIMIT ?';
+        params.push(limit);
+
+        const stmt = this.db.prepare(query);
+        return stmt.all(...params) as any[];
     }
 }
 

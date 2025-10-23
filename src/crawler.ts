@@ -645,12 +645,12 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                 // Process audits in parallel batches to speed up execution
                 // Dynamic batch size based on total URLs for optimal performance
                 const totalUrls = urlsToAudit.length;
-                let batchSize = 3; // Default for small sites
+                let batchSize = 8; // Default for small sites (increased from 3)
                 
                 if (totalUrls > 50) {
-                    batchSize = 5; // Larger batches for big sites
+                    batchSize = 12; // Larger batches for big sites (increased from 5)
                 } else if (totalUrls > 20) {
-                    batchSize = 4; // Medium batches for medium sites
+                    batchSize = 10; // Medium batches for medium sites (increased from 4)
                 }
                 
                 const batches = [];
@@ -731,8 +731,8 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
                     // Smart delay between batches - shorter delays for better performance
                     if (batchIndex < batches.length - 1) {
                         // Reduce delay based on batch size and progress
-                        const baseDelay = batchSize > 4 ? 500 : 750; // Shorter delays for larger batches
-                        const progressDelay = Math.max(200, baseDelay - (batchIndex * 50)); // Decreasing delays
+                        const baseDelay = batchSize > 10 ? 100 : 200; // Minimal delays (increased from 500/750)
+                        const progressDelay = Math.max(50, baseDelay - (batchIndex * 10)); // Minimal decreasing delays (increased from 200)
                         await new Promise(resolve => setTimeout(resolve, progressDelay));
                     }
                 }
