@@ -159,10 +159,18 @@ export class SchedulerService {
             });
 
             // Notify start
-            void this.mailer.send(
-                `Crawler started: ${schedule.name}`,
-                `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStarted: ${new Date().toString()}\nMode: ${schedule.mode}\nConcurrency: ${schedule.maxConcurrency}`
-            );
+            const db = this.scheduleManager.getDatabase();
+            const user = db.getUserById(schedule.userId);
+            const userSettings = user ? db.getUserSettings(schedule.userId) : null;
+            
+            if (user && userSettings?.emailNotifications) {
+                void this.mailer.send(
+                    `Crawler started: ${schedule.name}`,
+                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStarted: ${new Date().toString()}\nMode: ${schedule.mode}\nConcurrency: ${schedule.maxConcurrency}`,
+                    undefined,
+                    user.email
+                );
+            }
             
             // Run the crawl first
             await runCrawl({
@@ -188,7 +196,6 @@ export class SchedulerService {
             
             // Record execution after crawl completes
             const duration = Date.now() - startTime;
-            const db = this.scheduleManager.getDatabase();
             const latestSession = db.getLatestCrawlSession();
             const sessionId = latestSession ? latestSession.id : 0;
             
@@ -208,10 +215,17 @@ export class SchedulerService {
                 });
 
                 // Notify success
-                void this.mailer.send(
-                    `Crawler completed: ${schedule.name}`,
-                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: completed\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`
-                );
+                const user = db.getUserById(schedule.userId);
+                const userSettings = user ? db.getUserSettings(schedule.userId) : null;
+                
+                if (user && userSettings?.emailNotifications) {
+                    void this.mailer.send(
+                        `Crawler completed: ${schedule.name}`,
+                        `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: completed\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`,
+                        undefined,
+                        user.email
+                    );
+                }
             }
             
             // Calculate next run time
@@ -243,7 +257,6 @@ export class SchedulerService {
             
             // Record execution as failed
             const duration = Date.now() - startTime;
-            const db = this.scheduleManager.getDatabase();
             const latestSession = db.getLatestCrawlSession();
             const sessionId = latestSession ? latestSession.id : 0;
             
@@ -263,10 +276,17 @@ export class SchedulerService {
                 });
 
                 // Notify failure
-                void this.mailer.send(
-                    `Crawler failed: ${schedule.name}`,
-                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: failed\nError: ${(error as Error).message}\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`
-                );
+                const user = db.getUserById(schedule.userId);
+                const userSettings = user ? db.getUserSettings(schedule.userId) : null;
+                
+                if (user && userSettings?.emailNotifications) {
+                    void this.mailer.send(
+                        `Crawler failed: ${schedule.name}`,
+                        `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: failed\nError: ${(error as Error).message}\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`,
+                        undefined,
+                        user.email
+                    );
+                }
             }
             
             // Calculate next run time

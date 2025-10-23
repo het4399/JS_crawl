@@ -474,7 +474,9 @@ app.post('/crawl',
             if (user && userSettings?.emailNotifications) {
                 await mailer.send(
                     `Crawl Started: ${safeUrl}`,
-                    `Hello ${user.name || user.email},\n\nYour crawl has started!\n\nURL: ${safeUrl}\nStarted: ${new Date().toLocaleString()}\nRun Audits: ${runAudits ? 'Yes' : 'No'}\n\nYou'll receive another email when the crawl completes.\n\nBest regards,\nContentlytics Team`
+                    `Hello ${user.name || user.email},\n\nYour crawl has started!\n\nURL: ${safeUrl}\nStarted: ${new Date().toLocaleString()}\nRun Audits: ${runAudits ? 'Yes' : 'No'}\n\nYou'll receive another email when the crawl completes.\n\nBest regards,\nContentlytics Team`,
+                    undefined,
+                    user.email
                 );
             }
         } catch (error) {
@@ -543,7 +545,9 @@ app.post('/crawl',
                         if (user && userSettings?.emailNotifications) {
                             await mailer.send(
                                 `Crawl Completed: ${safeUrl}`,
-                                `Hello ${user.name || user.email},\n\nYour crawl has completed successfully! 🎉\n\nURL: ${safeUrl}\nTotal Pages: ${count}\nDuration: ${durationSeconds}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`
+                                `Hello ${user.name || user.email},\n\nYour crawl has completed successfully! 🎉\n\nURL: ${safeUrl}\nTotal Pages: ${count}\nDuration: ${durationSeconds}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`,
+                                undefined,
+                                user.email
                             );
                         }
                     } catch (error) {
@@ -590,7 +594,9 @@ app.post('/crawl',
                 if (user && userSettings?.emailNotifications) {
                     await mailer.send(
                         `Crawl Failed: ${safeUrl}`,
-                        `Hello ${user.name || user.email},\n\nYour crawl encountered an error and could not complete. ⚠️\n\nURL: ${safeUrl}\nError: ${error.message}\nDuration: ${durationSeconds}s\nFailed: ${new Date().toLocaleString()}\n\nPlease try again or contact support if the issue persists.\n\nBest regards,\nContentlytics Team`
+                        `Hello ${user.name || user.email},\n\nYour crawl encountered an error and could not complete. ⚠️\n\nURL: ${safeUrl}\nError: ${error.message}\nDuration: ${durationSeconds}s\nFailed: ${new Date().toLocaleString()}\n\nPlease try again or contact support if the issue persists.\n\nBest regards,\nContentlytics Team`,
+                        undefined,
+                        user.email
                     );
                 }
             } catch (emailError) {

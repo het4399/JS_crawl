@@ -91,6 +91,23 @@ const AppWithAuth: React.FC = () => {
     };
   }, [isAuthenticated]); // Re-run when authentication status changes
 
+  // Clear all crawl/history data when user logs out
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      setUrl('');
+      setLoading(false);
+      setResult(null);
+      setError(null);
+      setRunCrawl(false);
+      setIsCrawling(false);
+      setPageCount(0);
+      setLogs([]);
+      setPages([]);
+      setCrawlStats(null);
+      setCurrentView('home');
+    }
+  }, [isAuthenticated]);
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!url.trim()) return;
