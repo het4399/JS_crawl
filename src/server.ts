@@ -435,10 +435,12 @@ app.post('/crawl',
         return res.status(400).json({ error: 'Invalid URL. Please include a valid domain (e.g. https://example.com)' });
     }
 
-    // Block manual crawl if the same URL is already running
+    const userId = req.user!.userId; // Get authenticated user ID
+
+    // Block manual crawl if the same URL is already running FOR THIS USER
     try {
         const db = getDatabase();
-        const running = db.getRunningSessionByUrl(safeUrl);
+        const running = db.getRunningSessionByUrl(safeUrl, userId);
         if (running) {
             return res.status(409).json({
                 error: 'A crawl for this URL is already running',
@@ -450,7 +452,6 @@ app.post('/crawl',
     }
 
     const requestId = `crawl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const userId = req.user!.userId; // Get authenticated user ID
     
     logger.info('Crawl request received', { url: safeUrl, userId, allowSubdomains, maxConcurrency, mode }, requestId);
     
