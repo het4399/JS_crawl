@@ -9,8 +9,18 @@ from urllib.parse import urljoin, urlparse
 from typing import Dict, List, Tuple
 try:
     from .openai_service import OpenAIService
+    from .multi_ai_service import MultiAIService
 except ImportError:
-    from openai_service import OpenAIService  
+    try:
+        from openai_service import OpenAIService
+        from multi_ai_service import MultiAIService
+    except ImportError:
+        # Fallback for when running as standalone
+        import sys
+        import os
+        sys.path.append(os.path.dirname(__file__))
+        from openai_service import OpenAIService
+        from multi_ai_service import MultiAIService  
 # import extruct  # Temporarily disabled due to compatibility issues
 
 class AIPresenceService:
@@ -21,11 +31,9 @@ class AIPresenceService:
             ('GPTBot', re.compile(r'(?i)gptbot')),
             ('Google-Extended', re.compile(r'(?i)google-extended')),
             ('ClaudeBot', re.compile(r'(?i)claudebot|anthropic-ai')),
-            ('PerplexityBot', re.compile(r'(?i)perplexitybot')),
-            ('CCBot', re.compile(r'(?i)ccbot')),
-            ('bingbot', re.compile(r'(?i)bingbot')),
         ]
         self.openai_service = OpenAIService()
+        self.multi_ai_service = MultiAIService()
     
     def _fetch_text(self, url: str, timeout: int = 8) -> str:
         """Fetch text content from URL"""
@@ -190,7 +198,7 @@ class AIPresenceService:
             
             content_checks = self._extract_org_and_meta(html or '', jsonld)
             
-            # AI Content Understanding Analysis
+            # Multi-AI Content Understanding Analysis
             ai_understanding = {}
             if html:
                 # Extract text content for AI analysis
@@ -198,8 +206,8 @@ class AIPresenceService:
                 soup = BeautifulSoup(html, 'html.parser')
                 text_content = soup.get_text()
                 
-                # Get AI understanding analysis
-                ai_understanding = self.openai_service.analyze_content_understanding(text_content, url)
+                # Get multi-AI understanding analysis
+                ai_understanding = self.multi_ai_service.analyze_content_understanding(text_content, url)
 
             # Scoring
             score = 0
@@ -244,9 +252,9 @@ class AIPresenceService:
             if any(s in content_schemas for s in ('Product', 'FAQPage', 'Article', 'BlogPosting')):
                 score += 15
             
-            # 20 pts AI Content Understanding (NEW)
-            if ai_understanding and 'score' in ai_understanding:
-                ai_score = ai_understanding.get('score', 0)
+            # 20 pts AI Content Understanding (Multi-AI)
+            if ai_understanding and 'overall_score' in ai_understanding:
+                ai_score = ai_understanding.get('overall_score', 0)
                 score += min(20, ai_score // 5)  # Convert 0-100 to 0-20 points
 
             score = max(0, min(100, score))
@@ -287,12 +295,54 @@ class AIPresenceService:
             if ai_understanding and 'understanding_level' in ai_understanding:
                 explanation_bits.append(f'AI understanding: {ai_understanding["understanding_level"]}')
 
+            # Calculate individual bot scores for frontend
+            platforms = {}
+            for label, _ in self.ai_bot_agents:
+                bot_key = label.lower()
+                is_allowed = robots_checks.get(f'robots_{bot_key}', True)
+                
+                # If bot is not allowed, score is 0
+                if not is_allowed:
+                    platforms[label] = {
+                        'score': 0,
+                        'status': 'OFFLINE',
+                        'allowed': False,
+                        'details': {
+                            'robots_allowed': False,
+                            'org_schema': False,
+                            'sitemap': False,
+                            'og_tags': False
+                        }
+                    }
+                else:
+                    # Each bot gets points based on robots.txt allowance and other factors
+                    bot_score = 20  # Base score for being allowed
+                    if content_checks.get('org_schema_present'):
+                        bot_score += 15  # Organization schema helps
+                    if content_checks.get('sitemap_present'):
+                        bot_score += 10  # Sitemap helps
+                    if content_checks.get('open_graph_present'):
+                        bot_score += 5   # OG tags helps
+                    
+                    platforms[label] = {
+                        'score': min(100, bot_score),
+                        'status': 'LIVE',
+                        'allowed': True,
+                        'details': {
+                            'robots_allowed': True,
+                            'org_schema': content_checks.get('org_schema_present', False),
+                            'sitemap': robots_checks.get('sitemap_present', False),
+                            'og_tags': content_checks.get('open_graph_present', False)
+                        }
+                    }
+
             return {
                 'score': score,
                 'explanation': '; '.join(explanation_bits),
                 'checks': {**robots_checks, **content_checks},
                 'recommendations': recs,
-                'ai_understanding': ai_understanding  # NEW: Include AI analysis results
+                'ai_understanding': ai_understanding,  # NEW: Include AI analysis results
+                'platforms': platforms  # NEW: Individual bot scores for frontend
             }
         except Exception as e:
             return {

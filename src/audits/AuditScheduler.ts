@@ -153,11 +153,13 @@ export class AuditScheduler {
             updates.nextRun = nextRun ?? undefined;
         }
 
+        // Convert database-compatible updates
+        const dbUpdates = { ...updates } as Partial<import('../database/DatabaseService.js').AuditSchedule>;
         if (updates.urls) {
-            (updates as any).urls = JSON.stringify(updates.urls);
+            dbUpdates.urls = JSON.stringify(updates.urls);
         }
         
-        this.db.updateAuditSchedule(id, updates as any);
+        this.db.updateAuditSchedule(id, dbUpdates);
         this.logger.info('Audit schedule updated', { scheduleId: id, updates });
     }
 

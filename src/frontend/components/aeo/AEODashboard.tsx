@@ -20,6 +20,13 @@ interface AIPlatform {
   icon: string;
   score: number;
   status: 'LIVE' | 'OFFLINE';
+  details?: {
+    understanding_level?: string;
+    clarity_score?: number;
+    key_topics?: string[];
+    main_issues?: string[];
+    recommendations?: string[];
+  };
 }
 
 interface Competitor {
@@ -103,14 +110,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
 
     // Map common AI platforms to icons
     const platformIcons: { [key: string]: string } = {
-      'ChatGPT': 'A',
-      'chatgpt': 'A',
-      'Gemini': 'G',
-      'gemini': 'G',
-      'Claude': 'C',
-      'claude': 'C',
-      'Perplexity': 'P',
-      'perplexity': 'P'
+      'GPTBot': '🤖',
+      'ChatGPT': '🤖',
+      'chatgpt': '🤖',
+      'OpenAI': '🤖',
+      'Google-Extended': '🧠',
+      'Gemini': '🧠',
+      'gemini': '🧠',
+      'ClaudeBot': '🎭',
+      'Claude': '🎭',
+      'claude': '🎭'
     };
 
     // Check if the API provides platform-specific data
@@ -125,16 +134,33 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
       });
     }
 
-    // Check if platform scores are in ai_understanding
+    // Check if multi-AI analysis is available
     if (aiData.ai_understanding && typeof aiData.ai_understanding === 'object') {
-      if (aiData.ai_understanding.platform_scores && typeof aiData.ai_understanding.platform_scores === 'object') {
-        Object.entries(aiData.ai_understanding.platform_scores).forEach(([name, data]: [string, any]) => {
-          if (!platforms.find(p => p.name === name)) {
+      const multiAI = aiData.ai_understanding;
+      
+      // Add AI provider comparison if available
+      if (multiAI.openai || multiAI.gemini || multiAI.claude) {
+        const aiProviders = [
+          { name: 'OpenAI', key: 'openai', icon: '🤖' },
+          { name: 'Gemini', key: 'gemini', icon: '🧠' },
+          { name: 'Claude', key: 'claude', icon: '🎭' }
+        ];
+        
+        aiProviders.forEach(provider => {
+          const data = multiAI[provider.key];
+          if (data && !data.error) {
             platforms.push({
-              name: name,
-              icon: platformIcons[name] || name.charAt(0).toUpperCase(),
+              name: provider.name,
+              icon: provider.icon,
               score: Math.round(data.score || 0),
-              status: data.status || 'LIVE'
+              status: 'LIVE',
+              details: {
+                understanding_level: data.understanding_level,
+                clarity_score: data.clarity_score,
+                key_topics: data.key_topics,
+                main_issues: data.main_issues,
+                recommendations: data.recommendations
+              }
             });
           }
         });
@@ -144,9 +170,9 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     // If no platforms data found in API, return 0 scores
     if (platforms.length === 0) {
       return [
-        { name: 'ChatGPT', icon: 'A', score: 0, status: 'OFFLINE' },
-        { name: 'Gemini', icon: 'G', score: 0, status: 'OFFLINE' },
-        { name: 'Claude', icon: 'C', score: 0, status: 'OFFLINE' }
+        { name: 'ChatGPT', icon: '🤖', score: 0, status: 'OFFLINE' },
+        { name: 'Gemini', icon: '🧠', score: 0, status: 'OFFLINE' },
+        { name: 'Claude', icon: '🎭', score: 0, status: 'OFFLINE' }
       ];
     }
 

@@ -10,5 +10,7 @@ lxml==4.9.3
 requests==2.31.0
 openai==2.6.0
 python-dotenv==1.0.0
+google-generativeai==0.8.0
+anthropic==0.40.0
 # extruct==0.12.0  # Temporarily disabled due to compatibility issues
 

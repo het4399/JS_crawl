@@ -45,42 +45,35 @@ class OpenAIService:
             }
         
         try:
-            # Truncate content if too long (OpenAI has token limits)
-            max_content_length = 8000  # Conservative limit
+            # Truncate content to reduce costs - much shorter limit
+            max_content_length = 2000  # Reduced from 8000 to minimize tokens
             if len(content) > max_content_length:
                 content = content[:max_content_length] + "..."
             
-            prompt = f"""
-            Analyze this web content for AI understanding and clarity. The URL is: {url}
-            
-            Content:
-            {content}
-            
-            Please provide:
-            1. Understanding level (Poor/Fair/Good/Excellent)
-            2. Key topics identified (list top 5)
-            3. Clarity score (0-100)
-            4. Main issues that might confuse AI
-            5. Recommendations for better AI understanding
-            
-            Respond in JSON format:
-            {{
-                "understanding_level": "string",
-                "key_topics": ["topic1", "topic2", ...],
-                "clarity_score": number,
-                "main_issues": ["issue1", "issue2", ...],
-                "recommendations": ["rec1", "rec2", ...]
-            }}
-            """
+            # Shorter, more focused prompt to reduce costs
+            prompt = f"""Analyze this content for AI understanding. URL: {url}
+
+Content: {content}
+
+Rate understanding level (Poor/Fair/Good/Excellent), key topics (top 3), clarity score (0-100), main issues, and recommendations.
+
+JSON format:
+{{
+    "understanding_level": "string",
+    "key_topics": ["topic1", "topic2", "topic3"],
+    "clarity_score": number,
+    "main_issues": ["issue1", "issue2"],
+    "recommendations": ["rec1", "rec2"]
+}}"""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-1106",  # Use newer model with JSON support
+                model="gpt-3.5-turbo",  # Use cheaper model instead of 1106
                 messages=[
-                    {"role": "system", "content": "You are an AI content analyst. Analyze web content for AI understanding and provide structured feedback in JSON format only."},
+                    {"role": "system", "content": "AI content analyst. Analyze for understanding. JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},  # Force JSON response
-                max_tokens=1000,
+                response_format={"type": "json_object"},
+                max_tokens=400,  # Reduced from 1000 to minimize costs
                 temperature=0.3
             )
             
@@ -138,41 +131,33 @@ class OpenAIService:
             }
         
         try:
-            # Truncate content if too long
-            max_content_length = 6000
+            # Truncate content to reduce costs
+            max_content_length = 1500  # Reduced from 6000
             if len(content) > max_content_length:
                 content = content[:max_content_length] + "..."
             
-            prompt = f"""
-            Analyze the tone and sentiment of this content:
-            
-            {content}
-            
-            Provide:
-            1. Tone (Professional, Casual, Academic, Technical, Friendly, etc.)
-            2. Sentiment (Positive, Negative, Neutral)
-            3. Confidence level (0-100)
-            4. Key emotional indicators
-            5. Recommendations for better tone
-            
-            Respond in JSON format:
-            {{
-                "tone": "string",
-                "sentiment": "string",
-                "confidence": number,
-                "emotional_indicators": ["indicator1", "indicator2", ...],
-                "recommendations": ["rec1", "rec2", ...]
-            }}
-            """
+            # Shorter prompt to reduce costs
+            prompt = f"""Analyze tone and sentiment: {content}
+
+Provide tone, sentiment, confidence (0-100), emotional indicators, and recommendations.
+
+JSON:
+{{
+    "tone": "string",
+    "sentiment": "string", 
+    "confidence": number,
+    "emotional_indicators": ["indicator1", "indicator2"],
+    "recommendations": ["rec1", "rec2"]
+}}"""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-1106",  # Use newer model with JSON support
+                model="gpt-3.5-turbo",  # Use cheaper model
                 messages=[
-                    {"role": "system", "content": "You are a content tone and sentiment analyst. Analyze text for tone, sentiment, and emotional indicators. Respond in JSON format only."},
+                    {"role": "system", "content": "Tone and sentiment analyst. JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},  # Force JSON response
-                max_tokens=500,
+                response_format={"type": "json_object"},
+                max_tokens=300,  # Reduced from 500
                 temperature=0.3
             )
             
@@ -225,54 +210,44 @@ class OpenAIService:
             }
         
         try:
-            # Truncate content if too long
-            max_content_length = 6000
+            # Truncate content to reduce costs
+            max_content_length = 1500  # Reduced from 6000
             if len(content) > max_content_length:
                 content = content[:max_content_length] + "..."
             
             # Generate questions if not provided
             if not questions:
                 questions = [
-                    "What is the main topic of this content?",
-                    "What problem does this content solve?",
-                    "What are the key benefits mentioned?",
-                    "What action should the reader take?"
+                    "What is the main topic?",
+                    "What problem does this solve?",
+                    "What are the key benefits?",
+                    "What action should be taken?"
                 ]
             
-            prompt = f"""
-            Analyze this content for answerability and question-answering quality:
-            
-            Content:
-            {content}
-            
-            Test Questions:
-            {chr(10).join(f"- {q}" for q in questions)}
-            
-            Evaluate:
-            1. How well does the content answer these questions? (0-100)
-            2. What questions are answered clearly?
-            3. What questions are not answered or unclear?
-            4. Overall answerability score (0-100)
-            5. Recommendations for better answerability
-            
-            Respond in JSON format:
-            {{
-                "ai_answerability_score": number,
-                "answered_questions": ["question1", "question2", ...],
-                "unanswered_questions": ["question1", "question2", ...],
-                "clarity_issues": ["issue1", "issue2", ...],
-                "recommendations": ["rec1", "rec2", ...]
-            }}
-            """
+            # Shorter prompt to reduce costs
+            prompt = f"""Analyze answerability: {content}
+
+Questions: {', '.join(questions)}
+
+Rate how well content answers questions (0-100), what's answered clearly, what's unclear, and recommendations.
+
+JSON:
+{{
+    "ai_answerability_score": number,
+    "answered_questions": ["q1", "q2"],
+    "unanswered_questions": ["q1", "q2"],
+    "clarity_issues": ["issue1", "issue2"],
+    "recommendations": ["rec1", "rec2"]
+}}"""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-1106",  # Use newer model with JSON support
+                model="gpt-3.5-turbo",  # Use cheaper model
                 messages=[
-                    {"role": "system", "content": "You are a content answerability analyst. Evaluate how well content answers questions and provides clear information. Respond in JSON format only."},
+                    {"role": "system", "content": "Answerability analyst. JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},  # Force JSON response
-                max_tokens=800,
+                response_format={"type": "json_object"},
+                max_tokens=400,  # Reduced from 800
                 temperature=0.3
             )
             
@@ -309,24 +284,21 @@ class OpenAIService:
             return "OpenAI service not available for summarization"
         
         try:
-            # Truncate content if too long
-            max_content_length = 4000
+            # Truncate content to reduce costs
+            max_content_length = 1000  # Reduced from 4000
             if len(content) > max_content_length:
                 content = content[:max_content_length] + "..."
             
-            prompt = f"""
-            Summarize this web content in {max_length} characters or less. Focus on the main points and key information:
-            
-            {content}
-            """
+            # Shorter prompt to reduce costs
+            prompt = f"""Summarize in {max_length} chars: {content}"""
             
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a content summarizer. Create concise, informative summaries of web content."},
+                    {"role": "system", "content": "Concise summarizer."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=300,
+                max_tokens=200,  # Reduced from 300
                 temperature=0.3
             )
             
