@@ -143,8 +143,12 @@ class StructuredDataService:
             
             metrics = self._analyze_extracted_data(extracted_data, url, html_content)
             
+            # Calculate final score (average of all metrics, capped at 100)
+            final_score = (metrics.coverage_score + metrics.quality_score + metrics.completeness_score + metrics.seo_relevance_score) / 4
+            final_score = min(100.0, max(0.0, final_score))  # Cap between 0 and 100
+            
             return {
-                'score': (metrics.coverage_score + metrics.quality_score + metrics.completeness_score + metrics.seo_relevance_score) / 4,
+                'score': final_score,
                 'metrics': {
                     'coverage': metrics.coverage_score,
                     'quality': metrics.quality_score,
@@ -191,12 +195,15 @@ class StructuredDataService:
         for format_type in self.supported_formats:
             if format_type in data and data[format_type]:
                 schemas = data[format_type]
-                total_schemas += len(schemas)
                 
                 for schema in schemas:
                     # If this is a JSON-LD container with @graph, expand child nodes
                     if format_type == 'json-ld' and isinstance(schema, dict) and isinstance(schema.get('@graph'), list):
-                        for child in schema['@graph']:
+                        # Count children as schemas, not the container itself
+                        graph_children = schema['@graph']
+                        total_schemas += len(graph_children)
+                        
+                        for child in graph_children:
                             # Treat each child as an independent schema
                             child_type = self._get_schema_type(child)
                             if child_type:
@@ -222,6 +229,9 @@ class StructuredDataService:
                             })
                         # Skip container record; already expanded
                         continue
+                    
+                    # Regular schema (not a @graph container)
+                    total_schemas += 1
                     schema_type = self._get_schema_type(schema)
                     if schema_type:
                         schema_types.append(schema_type)
@@ -462,7 +472,8 @@ class StructuredDataService:
         """Calculate quality score"""
         if total_schemas == 0:
             return 0.0
-        return (valid_schemas / total_schemas) * 100
+        score = (valid_schemas / total_schemas) * 100
+        return min(100.0, max(0.0, score))  # Cap between 0 and 100
     
     def _get_quality_explanation(self, valid_schemas: int, total_schemas: int, score: float) -> str:
         """Get quality explanation"""
@@ -578,7 +589,7 @@ class StructuredDataService:
     
     def _generate_context_aware_recommendations(self, schema_types: List[str], coverage_score: float, 
                                 quality_score: float, completeness_score: float, website_type: str) -> List[str]:
-        """Generate context-aware recommendations"""
+        """Generate context-aware, specific recommendations"""
         recommendations = []
         
         type_config = self.website_type_schemas.get(website_type, self.website_type_schemas['general'])
@@ -588,12 +599,25 @@ class StructuredDataService:
         missing_relevant = [schema for schema in relevant_schemas if schema not in unique_types]
         
         if missing_relevant:
-            recommendations.append(f"Add {', '.join(missing_relevant[:2])} schemas for {website_type} optimization")
+            schema_list = ', '.join(missing_relevant[:2])
+            recommendations.append(f"Add {schema_list} schemas to improve {website_type} visibility and AI understanding")
         
         if quality_score < 70:
-            recommendations.append("Fix validation errors in existing schemas")
+            error_pct = 100 - quality_score
+            recommendations.append(f"Fix validation errors in existing schemas (currently {error_pct:.0f}% error rate) to ensure proper AI parsing")
         
         if coverage_score < 50:
-            recommendations.append(f"Add more {website_type}-specific schemas")
+            recommendations.append(f"Add more {website_type}-specific schemas to improve structured data coverage and search visibility")
+        
+        # Check for Organization schema specifically
+        if 'Organization' in unique_types:
+            # Check for sameAs property (would need to check details, but provide general recommendation)
+            recommendations.append("Add Wikidata, Wikipedia, LinkedIn, Twitter, or other social profiles to Organization.sameAs property for better entity recognition")
+        
+        if 'Organization' not in unique_types and website_type in ['saas', 'business', 'general']:
+            recommendations.append("Add Organization schema markup to establish your brand identity for AI systems")
+        
+        if website_type == 'saas' and 'WebSite' not in unique_types:
+            recommendations.append("Add WebSite and WebPage schemas for SaaS optimization and better AI crawler understanding")
         
         return recommendations

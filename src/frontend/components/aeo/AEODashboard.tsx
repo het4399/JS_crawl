@@ -70,6 +70,61 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   onStopCrawl
 }) => {
   const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'audits'>(runCrawl ? 'crawler' : 'data');
+  const [showRecommendations, setShowRecommendations] = useState<string | null>(null);
+
+  // Get recommendations for specific modules
+  const getModuleRecommendations = (moduleName: string): string[] => {
+    if (!result?.detailed_analysis) return [];
+    
+    const module = result.detailed_analysis[moduleName];
+    return module?.recommendations || [];
+  };
+
+  // Determine priority level for a recommendation
+  const getRecommendationPriority = (rec: string): 'high' | 'medium' | 'low' => {
+    const recLower = rec.toLowerCase();
+    
+    // High priority keywords
+    const highPriorityKeywords = [
+      'add title tag',
+      'add meta description',
+      'allow indexing',
+      'robots.txt',
+      'sitemap',
+      'schema',
+      'structured data',
+      'faq section',
+      'canonical',
+      'organization schema',
+      'website schema',
+      'webpage schema'
+    ];
+    
+    // Medium priority keywords
+    const mediumPriorityKeywords = [
+      'improve',
+      'enhance',
+      'optimize',
+      'add more',
+      'better',
+      'clear',
+      'formatting',
+      'alt text',
+      'open graph',
+      'twitter card'
+    ];
+    
+    if (highPriorityKeywords.some(keyword => recLower.includes(keyword))) {
+      return 'high';
+    }
+    
+    if (mediumPriorityKeywords.some(keyword => recLower.includes(keyword))) {
+      return 'medium';
+    }
+    
+    return 'low';
+  };
+
   // Use real data from analysis result or fallback to defaults
   const scores: AEOScore = result ? {
     overall: Math.round(result.overall_score || 0),
@@ -321,6 +376,20 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>AI Presence</h3>
+            {getModuleRecommendations('ai_presence').length > 0 && (
+              <button 
+                className="info-button"
+                onClick={() => setShowRecommendations('ai_presence')}
+                title={`View ${getModuleRecommendations('ai_presence').length} recommendations`}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M10 14V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <circle cx="10" cy="7" r="0.75" fill="currentColor"/>
+                </svg>
+                <span className="info-badge">{getModuleRecommendations('ai_presence').length}</span>
+              </button>
+            )}
           </div>
           <div className="card-score">
             <div 
@@ -354,6 +423,20 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>Competitor Landscape</h3>
+            {getModuleRecommendations('competitor_analysis').length > 0 && (
+              <button 
+                className="info-button"
+                onClick={() => setShowRecommendations('competitor_analysis')}
+                title={`View ${getModuleRecommendations('competitor_analysis').length} recommendations`}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M10 14V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <circle cx="10" cy="7" r="0.75" fill="currentColor"/>
+                </svg>
+                <span className="info-badge">{getModuleRecommendations('competitor_analysis').length}</span>
+              </button>
+            )}
           </div>
           <div className="card-score">
             <div 
@@ -385,6 +468,28 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
         <div className="dashboard-card">
           <div className="card-header">
             <h3>Strategy Review</h3>
+            {(getModuleRecommendations('answerability').length > 0 || 
+              getModuleRecommendations('knowledge_base').length > 0 || 
+              getModuleRecommendations('structured_data').length > 0 || 
+              getModuleRecommendations('crawler_accessibility').length > 0) && (
+              <button 
+                className="info-button"
+                onClick={() => setShowRecommendations('strategy_review')}
+                title={`View ${getModuleRecommendations('answerability').length + getModuleRecommendations('knowledge_base').length + getModuleRecommendations('structured_data').length + getModuleRecommendations('crawler_accessibility').length} recommendations`}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M10 14V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <circle cx="10" cy="7" r="0.75" fill="currentColor"/>
+                </svg>
+                <span className="info-badge">
+                  {getModuleRecommendations('answerability').length + 
+                   getModuleRecommendations('knowledge_base').length + 
+                   getModuleRecommendations('structured_data').length + 
+                   getModuleRecommendations('crawler_accessibility').length}
+                </span>
+              </button>
+            )}
           </div>
           <div className="card-score">
             <div 
@@ -420,6 +525,7 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
             ))}
           </div>
         </div>
+
       </div>
 
       {/* Tab Navigation */}
@@ -574,6 +680,214 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           {activeView === 'audits' && <AuditsPage />}
         </div>
       </div>
+
+      {/* Recommendations Modal */}
+      {showRecommendations && (
+        <div className="recommendations-modal-overlay" onClick={() => setShowRecommendations(null)}>
+          <div className="recommendations-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <div className="modal-title-icon">
+                  {showRecommendations === 'ai_presence' && '🤖'}
+                  {showRecommendations === 'competitor_analysis' && '🎯'}
+                  {showRecommendations === 'strategy_review' && '📊'}
+                </div>
+                <div className="modal-title-section">
+                  <h3>
+                    {showRecommendations === 'ai_presence' && 'AI Presence Recommendations'}
+                    {showRecommendations === 'competitor_analysis' && 'Competitor Analysis Recommendations'}
+                    {showRecommendations === 'strategy_review' && 'Strategy Review Recommendations'}
+                  </h3>
+                  <p className="modal-subtitle">
+                    {showRecommendations === 'ai_presence' && 'Improve your AI visibility and presence'}
+                    {showRecommendations === 'competitor_analysis' && 'Enhance your competitive positioning'}
+                    {showRecommendations === 'strategy_review' && 'Optimize your overall strategy'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                className="close-button"
+                onClick={() => setShowRecommendations(null)}
+                aria-label="Close modal"
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            <div className="modal-content">
+              {showRecommendations === 'strategy_review' ? (
+                <div className="strategy-recommendations">
+                  {getModuleRecommendations('answerability').length > 0 && (
+                    <div className="module-section">
+                      <div className="module-section-header">
+                        <span className="module-icon">❓</span>
+                        <h4>Answerability</h4>
+                      </div>
+                      <div className="recommendations-list">
+                        {getModuleRecommendations('answerability').map((rec, index) => {
+                          const priority = getRecommendationPriority(rec);
+                          return (
+                            <div key={index} className={`recommendation-item priority-${priority}`}>
+                              <div className="recommendation-icon-wrapper">
+                                <div className="recommendation-icon">💡</div>
+                              </div>
+                              <div className="recommendation-content">
+                                <div className="recommendation-header">
+                                  <span className={`priority-badge priority-${priority}`}>
+                                    {priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="recommendation-text">{rec}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {getModuleRecommendations('knowledge_base').length > 0 && (
+                    <div className="module-section">
+                      <div className="module-section-header">
+                        <span className="module-icon">📚</span>
+                        <h4>Knowledge Base</h4>
+                      </div>
+                      <div className="recommendations-list">
+                        {getModuleRecommendations('knowledge_base').map((rec, index) => {
+                          const priority = getRecommendationPriority(rec);
+                          return (
+                            <div key={index} className={`recommendation-item priority-${priority}`}>
+                              <div className="recommendation-icon-wrapper">
+                                <div className="recommendation-icon">💡</div>
+                              </div>
+                              <div className="recommendation-content">
+                                <div className="recommendation-header">
+                                  <span className={`priority-badge priority-${priority}`}>
+                                    {priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="recommendation-text">{rec}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {getModuleRecommendations('structured_data').length > 0 && (
+                    <div className="module-section">
+                      <div className="module-section-header">
+                        <span className="module-icon">🔧</span>
+                        <h4>Structured Data</h4>
+                      </div>
+                      <div className="recommendations-list">
+                        {getModuleRecommendations('structured_data').map((rec, index) => {
+                          const priority = getRecommendationPriority(rec);
+                          return (
+                            <div key={index} className={`recommendation-item priority-${priority}`}>
+                              <div className="recommendation-icon-wrapper">
+                                <div className="recommendation-icon">💡</div>
+                              </div>
+                              <div className="recommendation-content">
+                                <div className="recommendation-header">
+                                  <span className={`priority-badge priority-${priority}`}>
+                                    {priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="recommendation-text">{rec}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {getModuleRecommendations('crawler_accessibility').length > 0 && (
+                    <div className="module-section">
+                      <div className="module-section-header">
+                        <span className="module-icon">🕷️</span>
+                        <h4>Crawler Accessibility</h4>
+                      </div>
+                      <div className="recommendations-list">
+                        {getModuleRecommendations('crawler_accessibility').map((rec, index) => {
+                          const priority = getRecommendationPriority(rec);
+                          return (
+                            <div key={index} className={`recommendation-item priority-${priority}`}>
+                              <div className="recommendation-icon-wrapper">
+                                <div className="recommendation-icon">💡</div>
+                              </div>
+                              <div className="recommendation-content">
+                                <div className="recommendation-header">
+                                  <span className={`priority-badge priority-${priority}`}>
+                                    {priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="recommendation-text">{rec}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {(() => {
+                    const moduleName = showRecommendations === 'ai_presence' ? 'AI Presence' : 
+                                      showRecommendations === 'competitor_analysis' ? 'Competitor Analysis' : '';
+                    const moduleIcon = showRecommendations === 'ai_presence' ? '🤖' : 
+                                     showRecommendations === 'competitor_analysis' ? '🎯' : '';
+                    const recommendations = getModuleRecommendations(showRecommendations);
+                    
+                    if (recommendations.length === 0) {
+                      return (
+                        <div className="no-recommendations">
+                          <div className="no-recommendations-icon">📝</div>
+                          <div className="no-recommendations-text">
+                            No recommendations available for this module.
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <div className="module-section">
+                        {moduleName && (
+                          <div className="module-section-header">
+                            <span className="module-icon">{moduleIcon}</span>
+                            <h4>{moduleName}</h4>
+                          </div>
+                        )}
+                        <div className="recommendations-list">
+                          {recommendations.map((rec, index) => {
+                            const priority = getRecommendationPriority(rec);
+                            return (
+                              <div key={index} className={`recommendation-item priority-${priority}`}>
+                                <div className="recommendation-icon-wrapper">
+                                  <div className="recommendation-icon">💡</div>
+                                </div>
+                                <div className="recommendation-content">
+                                  <div className="recommendation-header">
+                                    <span className={`priority-badge priority-${priority}`}>
+                                      {priority.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <div className="recommendation-text">{rec}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

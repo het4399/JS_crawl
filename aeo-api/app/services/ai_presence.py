@@ -259,30 +259,41 @@ class AIPresenceService:
 
             score = max(0, min(100, score))
 
-            # Generate recommendations
+            # Generate specific, actionable recommendations
             recs = []
             if not robots_checks.get('sitemap_present'):
-                recs.append('Add Sitemap line to robots.txt')
+                recs.append('Add Sitemap URL to robots.txt (e.g., "Sitemap: https://yoursite.com/sitemap.xml") to help AI crawlers discover all pages')
+            
+            blocked_bots = []
             for label, _ in self.ai_bot_agents:
                 key = f'robots_{label.lower()}'
                 if not robots_checks.get(key, True):
-                    recs.append(f'Allow {label} in robots.txt')
-            if not content_checks.get('org_schema_present'):
-                recs.append('Add Organization schema on the homepage')
-            if not content_checks.get('org_logo_present'):
-                recs.append('Provide a valid logo URL in Organization.logo')
-            if not content_checks.get('sameas_wikidata_or_wikipedia'):
-                recs.append('Add Wikidata or Wikipedia link in Organization.sameAs')
-            if content_checks.get('sameas_major_profiles_count', 0) < 2:
-                recs.append('Add LinkedIn/Twitter/YouTube/Crunchbase/GitHub links in Organization.sameAs')
-            if not content_checks.get('open_graph_present'):
-                recs.append('Add Open Graph meta tags')
-            if not content_checks.get('twitter_card_present'):
-                recs.append('Add Twitter Card meta tags')
+                    blocked_bots.append(label)
+            if blocked_bots:
+                recs.append('Allow {} in robots.txt to ensure AI crawlers can access your content'.format(' and '.join(blocked_bots)))
             
-            # Add AI understanding recommendations
+            if not content_checks.get('org_schema_present'):
+                recs.append('Add Organization schema markup to your homepage to establish brand identity for AI systems')
+            if not content_checks.get('org_logo_present'):
+                recs.append('Provide a valid logo URL in Organization.logo property to improve visual brand recognition')
+            if not content_checks.get('sameas_wikidata_or_wikipedia'):
+                recs.append('Add Wikidata or Wikipedia link in Organization.sameAs property to improve entity recognition and authority')
+            if content_checks.get('sameas_major_profiles_count', 0) < 2:
+                current_count = content_checks.get('sameas_major_profiles_count', 0)
+                recs.append('Add more social profiles (LinkedIn, Twitter, YouTube, Crunchbase, GitHub) to Organization.sameAs (currently {} of 2 recommended)'.format(current_count))
+            if not content_checks.get('open_graph_present'):
+                recs.append('Add Open Graph meta tags (og:title, og:description, og:image) for better social sharing and AI understanding')
+            if not content_checks.get('twitter_card_present'):
+                recs.append('Add Twitter Card meta tags (twitter:card, twitter:title, twitter:description) for enhanced social media presence')
+            
+            # Add AI understanding recommendations (filter out generic ones)
             if ai_understanding and 'recommendations' in ai_understanding:
-                recs.extend(ai_understanding['recommendations'])
+                ai_recs = ai_understanding.get('recommendations', [])
+                for ai_rec in ai_recs:
+                    if ai_rec and isinstance(ai_rec, str) and len(ai_rec) > 15:
+                        # Filter out generic recommendations
+                        if not any(word in ai_rec.lower() for word in ['retry', 'error', 'failed', 'check', 'configure']):
+                            recs.append(ai_rec)
 
             explanation_bits = []
             explanation_bits.append('Robots allow major AI bots' if all(robots_checks.get(f'robots_{label.lower()}', True) for label, _ in self.ai_bot_agents) else 'Some AI bots are blocked in robots.txt')

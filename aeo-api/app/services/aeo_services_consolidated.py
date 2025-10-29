@@ -113,11 +113,113 @@ class AEOServiceOrchestrator:
             }
     
     def _generate_recommendations(self, results: dict) -> list:
-        """Generate recommendations from analysis results"""
-        recommendations = []
+        """Generate prioritized, actionable recommendations from analysis results"""
+        all_recommendations = []
+        priority_map = {
+            'high': [],
+            'medium': [],
+            'low': []
+        }
         
+        # Generic/error recommendations to filter out
+        generic_patterns = [
+            'retry',
+            'check',
+            'configure',
+            'failed',
+            'error',
+            'unavailable',
+            'try again'
+        ]
+        
+        # Collect all recommendations with metadata
         for key, analysis in results.items():
             if isinstance(analysis, dict) and 'recommendations' in analysis:
-                recommendations.extend(analysis['recommendations'])
+                module_score = analysis.get('score', 0)
+                for rec in analysis.get('recommendations', []):
+                    if rec and isinstance(rec, str):
+                        # Filter out generic/error recommendations
+                        rec_lower = rec.lower()
+                        if any(pattern in rec_lower for pattern in generic_patterns):
+                            continue
+                        
+                        # Determine priority based on score and module
+                        priority = self._determine_priority(rec, module_score, key)
+                        priority_map[priority].append(rec)
+                        all_recommendations.append(rec)
         
-        return list(set(recommendations))  # Remove duplicates
+        # Remove duplicates while preserving order
+        seen = set()
+        filtered_recommendations = []
+        
+        # Add high priority first
+        for rec in priority_map['high']:
+            if rec not in seen:
+                seen.add(rec)
+                filtered_recommendations.append(rec)
+        
+        # Then medium priority
+        for rec in priority_map['medium']:
+            if rec not in seen:
+                seen.add(rec)
+                filtered_recommendations.append(rec)
+        
+        # Finally low priority
+        for rec in priority_map['low']:
+            if rec not in seen:
+                seen.add(rec)
+                filtered_recommendations.append(rec)
+        
+        return filtered_recommendations[:20]  # Limit to top 20 recommendations
+    
+    def _determine_priority(self, recommendation: str, score: float, module: str) -> str:
+        """Determine priority level for a recommendation"""
+        rec_lower = recommendation.lower()
+        
+        # High priority: Critical fixes and missing essentials
+        high_priority_keywords = [
+            'add title tag',
+            'add meta description',
+            'allow indexing',
+            'robots.txt',
+            'sitemap',
+            'schema',
+            'structured data',
+            'faq section',
+            'canonical',
+            'organization schema',
+            'website schema',
+            'webpage schema'
+        ]
+        
+        # Medium priority: Improvements and optimizations
+        medium_priority_keywords = [
+            'improve',
+            'enhance',
+            'optimize',
+            'add more',
+            'better',
+            'clear',
+            'formatting',
+            'alt text',
+            'open graph',
+            'twitter card'
+        ]
+        
+        # Check for high priority keywords
+        if any(keyword in rec_lower for keyword in high_priority_keywords):
+            return 'high'
+        
+        # Low scores indicate high priority issues
+        if score < 40:
+            return 'high'
+        
+        # Check for medium priority keywords
+        if any(keyword in rec_lower for keyword in medium_priority_keywords):
+            return 'medium'
+        
+        # Default to medium if score is low-medium
+        if score < 70:
+            return 'medium'
+        
+        return 'low'

@@ -207,16 +207,24 @@ class KnowledgeBaseService:
             score += min(25, linkability_metrics['linkability_score'])  # Linkability (0-25 points)
             score += min(25, min(100, sum(format_usage.values()) * 2))  # Format usage (0-25 points)
             
-            # Generate recommendations
+            # Generate specific, actionable recommendations
             recommendations = []
             if fact_density < 2:
-                recommendations.append('Add more factual content with numbers, dates, and statistics')
+                recommendations.append('Add more factual content with specific numbers, dates, and statistics to improve AI understanding and credibility')
             if clarity_metrics['clarity_score'] < 50:
-                recommendations.append('Improve content clarity with better structure and transitions')
+                avg_sentence = clarity_metrics.get('avg_sentence_length', 0)
+                if avg_sentence > 25:
+                    recommendations.append('Reduce average sentence length (currently {:.1f} words) to improve readability and AI comprehension'.format(avg_sentence))
+                else:
+                    recommendations.append('Improve content clarity with better structure, clear transitions, and shorter paragraphs')
             if linkability_metrics['linkability_score'] < 30:
-                recommendations.append('Add more linkable content and internal linking opportunities')
+                recommendations.append('Add more linkable content (industry terms, key concepts) and internal linking opportunities to enhance context')
             if sum(format_usage.values()) < 5:
-                recommendations.append('Use more formatting elements like headings, lists, and emphasis')
+                missing_formats = [fmt for fmt, count in format_usage.items() if count == 0]
+                if missing_formats:
+                    recommendations.append('Use more formatting elements like {} to improve content structure and scannability'.format(', '.join(missing_formats[:3])))
+                else:
+                    recommendations.append('Use more formatting elements like headings, lists, and emphasis to improve content structure')
             
             return {
                 'score': min(100, score),

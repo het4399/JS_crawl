@@ -235,21 +235,23 @@ class CrawlerAccessibilityService:
             # Calculate overall score
             score = self._calculate_accessibility_score(robots_meta, meta_tags, images, links)
             
-            # Generate recommendations
+            # Generate specific, actionable recommendations
             recommendations = []
             
             if not robots_meta['allows_indexing']:
-                recommendations.append('Allow indexing in robots meta tag')
+                recommendations.append('Allow indexing in robots meta tag to ensure search engines and AI crawlers can index your content')
             if not meta_tags['has_title']:
-                recommendations.append('Add a title tag')
+                recommendations.append('Add a descriptive title tag (50-60 characters) to improve search visibility and AI understanding')
             if not meta_tags['has_description']:
-                recommendations.append('Add a meta description')
-            if images['alt_text_coverage'] < 0.8:
-                recommendations.append('Add alt text to images')
-            if links['text_coverage'] < 0.8:
-                recommendations.append('Add descriptive text to links')
+                recommendations.append('Add a meta description (150-160 characters) to provide context for search engines and AI systems')
+            if images['total_images'] > 0 and images['alt_text_coverage'] < 0.8:
+                missing_alt_pct = (1 - images['alt_text_coverage']) * 100
+                recommendations.append('Add descriptive alt text to {:.0f}% of images to improve accessibility and AI image understanding'.format(missing_alt_pct))
+            if links['total_links'] > 0 and links['text_coverage'] < 0.8:
+                missing_text_pct = (1 - links['text_coverage']) * 100
+                recommendations.append('Add descriptive anchor text to {:.0f}% of links to improve link context for AI crawlers'.format(missing_text_pct))
             if not meta_tags['has_canonical']:
-                recommendations.append('Add canonical URL')
+                recommendations.append('Add canonical URL tag to prevent duplicate content issues and improve SEO clarity')
             
             return {
                 'score': score,

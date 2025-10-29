@@ -175,20 +175,26 @@ class AnswerabilityService:
                     # Blend traditional and AI scores (70% traditional, 30% AI)
                     score = int(score * 0.7 + ai_score * 0.3)
             
-            # Generate recommendations
+            # Generate specific, actionable recommendations
             recommendations = []
             if len(questions) == 0:
-                recommendations.append('Add more question-based content')
+                recommendations.append('Add question-based content (e.g., "How does X work?", "What is Y?") to improve answerability for AI systems')
             if len(answers) == 0:
-                recommendations.append('Provide clear answers and explanations')
+                recommendations.append('Provide clear, direct answers and explanations to questions asked in your content')
             if not faq_structure['has_faq_structure']:
-                recommendations.append('Create a dedicated FAQ section')
+                recommendations.append('Create a dedicated FAQ section with structured Q&A pairs to improve AI answerability')
             if len(questions) > len(answers):
-                recommendations.append('Ensure all questions have corresponding answers')
+                unanswered_count = len(questions) - len(answers)
+                recommendations.append('Ensure all {} questions have corresponding answers to improve content completeness'.format(unanswered_count))
             
-            # Add AI recommendations
+            # Add AI recommendations (filter out generic ones)
             if ai_answerability and 'recommendations' in ai_answerability:
-                recommendations.extend(ai_answerability['recommendations'])
+                ai_recs = ai_answerability.get('recommendations', [])
+                for ai_rec in ai_recs:
+                    if ai_rec and isinstance(ai_rec, str) and len(ai_rec) > 10:
+                        # Filter out very short or generic AI recommendations
+                        if not any(word in ai_rec.lower() for word in ['retry', 'error', 'failed', 'check']):
+                            recommendations.append(ai_rec)
             
             # Add tone analysis
             tone_analysis = {}
