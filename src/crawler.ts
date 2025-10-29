@@ -1,4 +1,4 @@
-import { CheerioCrawler, log, RequestQueue } from 'crawlee';
+import { CheerioCrawler, log, RequestQueue ,Configuration } from 'crawlee';
 import { canonicalizeUrl, isSameSite } from './utils/url.js';
 import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
@@ -7,6 +7,8 @@ import { SitemapService } from './sitemap/SitemapService.js';
 import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
 import { extractLinkMetadata } from './utils/linkAnalyzer.js';
 import { initSeoEnqueue, maybeEnqueueSeo } from './seo/redis-queue.js';
+
+Configuration.set('systemInfoV2', true);
 
 /**
  * Check if a URL is a valid HTTP/HTTPS link that should be processed

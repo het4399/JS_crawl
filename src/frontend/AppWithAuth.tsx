@@ -108,9 +108,31 @@ const AppWithAuth: React.FC = () => {
     }
   }, [isAuthenticated]);
 
+  // Normalize URL - add https:// if no protocol is provided, upgrade http:// to https://
+  const normalizeUrl = (url: string): string => {
+    const trimmed = url.trim();
+    if (!trimmed) return trimmed;
+    
+    // Check if URL already has https://
+    if (/^https:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+    
+    // Upgrade http:// to https://
+    if (/^http:\/\//i.test(trimmed)) {
+      return trimmed.replace(/^http:\/\//i, 'https://');
+    }
+    
+    // Add https:// if no protocol
+    return `https://${trimmed}`;
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!url.trim()) return;
+    
+    // Normalize URL before submitting
+    const normalizedUrl = normalizeUrl(url.trim());
     
     setLoading(true);
     setResult(null);
@@ -127,13 +149,13 @@ const AppWithAuth: React.FC = () => {
     
     try {
       const analysisResult = runCrawl
-        ? await apiService.analyzeUrl(url.trim(), {
+        ? await apiService.analyzeUrl(normalizedUrl, {
             allowSubdomains,
             runAudits,
             auditDevice,
             captureLinkDetails
           })
-        : await apiService.analyzeUrl(url.trim());
+        : await apiService.analyzeUrl(normalizedUrl);
       
       setResult(analysisResult);
       
@@ -426,10 +448,10 @@ const AppWithAuth: React.FC = () => {
           <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
             <div className="flex gap-4 mb-4">
               <input
-                type="url"
+                type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Enter website URL (e.g., https://example.com)"
+                placeholder="Enter website URL (e.g., example.com or https://example.com)"
                 className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                 disabled={loading}
                 required

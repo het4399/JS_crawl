@@ -8,7 +8,6 @@ import { runCrawl, cancelAudits, resetAuditCancellation } from './crawler.js';
 import { monitoringRoutes, healthChecker, metricsCollector } from './routes/monitoring.routes.js';
 import { auditsRoutes } from './routes/audits.routes.js';
 import seoRoutes from './routes/seo.routes.js';
-import seoRedisQueueRoutes from './routes/seo-redis-queue.routes.js';
 import linksRoutes from './routes/links.routes.js';
 import aeoRoutes from './routes/aeo.routes.js';
 import authRoutes from './routes/auth.routes.js';
@@ -50,7 +49,6 @@ app.use('/api', monitoringRoutes);
 app.use('/api', auditsRoutes);
 app.use('/api/auth', authRoutes); // Authentication routes
 app.use(seoRoutes);
-app.use(seoRedisQueueRoutes);
 app.use(linksRoutes);
 app.use('/aeo', aeoRoutes);
 

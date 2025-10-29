@@ -55,66 +55,6 @@ router.post('/api/seo/extract', authenticateUser, async (req, res) => {
     }
 });
 
-// Cache management endpoints
-router.get('/api/seo/cache/stats', authenticateUser, async (req, res) => {
-    try {
-        const db = getDatabase();
-        const stats = await db.getSeoCacheStats();
-        res.json(stats);
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to get cache stats', details: (err as Error).message });
-    }
-});
-
-router.post('/api/seo/cache/clear-expired', authenticateUser, async (req, res) => {
-    try {
-        const db = getDatabase();
-        const deletedCount = await db.clearExpiredSeoCache();
-        res.json({ message: `Cleared ${deletedCount} expired entries` });
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to clear expired cache', details: (err as Error).message });
-    }
-});
-
-router.get('/api/seo/cache/:url', authenticateUser, async (req, res) => {
-    try {
-        const { url } = req.params;
-        const db = getDatabase();
-        const cachedData = await db.getSeoData(url);
-        
-        if (!cachedData) {
-            return res.status(404).json({ error: 'URL not found in cache' });
-        }
-        
-        res.json({
-            url,
-            ...cachedData,
-            cached: !cachedData.isExpired
-        });
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to get cached data', details: (err as Error).message });
-    }
-});
-
-router.delete('/api/seo/cache/:url', authenticateUser, async (req, res) => {
-    try {
-        const { url } = req.params;
-        const db = getDatabase();
-        
-        // Use raw database access to delete specific URL
-        const stmt = db.getDb().prepare('DELETE FROM seo_cache WHERE url = ?');
-        const result = stmt.run(url);
-        
-        if (result.changes === 0) {
-            return res.status(404).json({ error: 'URL not found in cache' });
-        }
-        
-        res.json({ message: 'Cache entry deleted successfully' });
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to delete cache entry', details: (err as Error).message });
-    }
-});
-
 export default router;
 
 
