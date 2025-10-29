@@ -18,7 +18,7 @@ export function generateXPath(element: Element): string {
         let index = 1;
         let sibling = current.prev;
         while (sibling) {
-            if (sibling.tagName?.toLowerCase() === tagName) {
+            if ('tagName' in sibling && sibling.tagName?.toLowerCase() === tagName) {
                 index++;
             }
             sibling = sibling.prev;
@@ -29,7 +29,7 @@ export function generateXPath(element: Element): string {
         
         // Add index if there are multiple siblings with same tag
         const nextSibling = current.next;
-        const hasMultipleSiblings = nextSibling && nextSibling.tagName?.toLowerCase() === tagName;
+        const hasMultipleSiblings = nextSibling && 'tagName' in nextSibling && nextSibling.tagName?.toLowerCase() === tagName;
         if (hasMultipleSiblings || index > 1) {
             segment += `[${index}]`;
         }
@@ -46,7 +46,7 @@ export function generateXPath(element: Element): string {
         }
 
         path.unshift(segment);
-        current = current.parent;
+        current = current.parent as Element | null;
         depth++;
     }
 

@@ -160,17 +160,7 @@ export class SchedulerService {
 
             // Notify start
             const db = this.scheduleManager.getDatabase();
-            const user = db.getUserById(schedule.userId);
-            const userSettings = user ? db.getUserSettings(schedule.userId) : null;
-            
-            if (user && userSettings?.emailNotifications) {
-                void this.mailer.send(
-                    `Crawler started: ${schedule.name}`,
-                    `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStarted: ${new Date().toString()}\nMode: ${schedule.mode}\nConcurrency: ${schedule.maxConcurrency}`,
-                    undefined,
-                    user.email
-                );
-            }
+            // Note: CrawlSchedule doesn't have userId, skipping user notifications for now
             
             // Run the crawl first
             await runCrawl({
@@ -179,9 +169,8 @@ export class SchedulerService {
                 maxConcurrency: schedule.maxConcurrency,
                 perHostDelayMs: 1000,
                 denyParamPrefixes: ['utm_', 'fbclid', 'gclid'],
-                mode: schedule.mode,
-                scheduleId: schedule.id,
-                userId: schedule.userId
+                mode: schedule.mode === 'js' || schedule.mode === 'auto' ? 'html' : schedule.mode, // Convert js/auto mode to html for compatibility
+                scheduleId: schedule.id
             }, {
                 onLog: (message) => {
                     this.logger.info(`[Schedule ${schedule.name}] ${message}`);
@@ -214,18 +203,7 @@ export class SchedulerService {
                     resourcesFound
                 });
 
-                // Notify success
-                const user = db.getUserById(schedule.userId);
-                const userSettings = user ? db.getUserSettings(schedule.userId) : null;
-                
-                if (user && userSettings?.emailNotifications) {
-                    void this.mailer.send(
-                        `Crawler completed: ${schedule.name}`,
-                        `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: completed\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`,
-                        undefined,
-                        user.email
-                    );
-                }
+                // Note: Skipping user notifications as CrawlSchedule doesn't have userId
             }
             
             // Calculate next run time
@@ -257,6 +235,7 @@ export class SchedulerService {
             
             // Record execution as failed
             const duration = Date.now() - startTime;
+            const db = this.scheduleManager.getDatabase();
             const latestSession = db.getLatestCrawlSession();
             const sessionId = latestSession ? latestSession.id : 0;
             
@@ -275,18 +254,7 @@ export class SchedulerService {
                     resourcesFound
                 });
 
-                // Notify failure
-                const user = db.getUserById(schedule.userId);
-                const userSettings = user ? db.getUserSettings(schedule.userId) : null;
-                
-                if (user && userSettings?.emailNotifications) {
-                    void this.mailer.send(
-                        `Crawler failed: ${schedule.name}`,
-                        `Schedule: ${schedule.name} (ID: ${schedule.id})\nURL: ${schedule.startUrl}\nStatus: failed\nError: ${(error as Error).message}\nDuration: ${Math.round(duration/1000)}s\nPages: ${pagesCrawled}\nResources: ${resourcesFound}\nFinished: ${new Date().toString()}`,
-                        undefined,
-                        user.email
-                    );
-                }
+                // Note: Skipping user notifications as CrawlSchedule doesn't have userId
             }
             
             // Calculate next run time

@@ -81,7 +81,7 @@ router.post('/analyze',
         logger.info('AEO analysis completed successfully', { userId });
         res.json(data);
     } catch (error) {
-        logger.error('AEO analysis proxy error:', error);
+        logger.error('AEO analysis proxy error:', error as Error);
         res.status(500).json({ 
             error: 'AEO analysis service unavailable', 
             details: (error as Error).message 
@@ -108,7 +108,7 @@ router.get('/health', async (req, res) => {
         logger.info('AEO health check completed');
         res.json(data);
     } catch (error) {
-        logger.error('AEO health check proxy error:', error);
+        logger.error('AEO health check proxy error:', error as Error);
         res.status(500).json({ 
             error: 'AEO service unavailable', 
             status: 'unhealthy',
@@ -140,7 +140,7 @@ router.get('/results/:sessionId',
             results: aeoResult
         });
     } catch (error) {
-        logger.error('Error retrieving AEO analysis results:', error);
+        logger.error('Error retrieving AEO analysis results:', error as Error);
         res.status(500).json({ 
             error: 'Failed to retrieve AEO analysis results', 
             details: (error as Error).message 
