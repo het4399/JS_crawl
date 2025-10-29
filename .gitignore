@@ -113,8 +113,9 @@ wheels/
 # Redis persistence
 dump.rdb
 
-# Storage directories
-storage/
+# Storage directories - ignore data files but keep directory structure
+storage/*
+!storage/.gitkeep
 proxy/storage/
 
 # DynamoDB Local
@@ -173,18 +174,9 @@ Thumbs.db
 # Project Specific (Contentlytics)
 # ===========================================
 
-# Storage directory (crawler data, audits, queues, etc.)
-storage/
-
-# Specifically ignore storage subdirectories
-storage/audits/
-storage/request_queues/
-storage/key_value_stores/
-storage/datasets/
-storage/audit-queue.txt
-
-# Crawler database
-storage/crawler.db
+# Storage directory - ignore all data files but keep structure
+storage/*
+!storage/.gitkeep
 
 # AEO API config with secrets
 aeo-api/config/openai.json

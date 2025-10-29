@@ -13,8 +13,6 @@
     "build": "tsc -p tsconfig.json",
     "build:frontend": "vite build",
     "crawl": "tsx src/index.ts",
-    "audits:worker": "tsx src/audits/worker.ts",
-    "audits:cli": "tsx src/audits/cli.ts",
     "seo:worker": "tsx src/seo/redis-worker.ts",
     "seo:cli": "tsx src/seo/redis-cli.ts"
   },

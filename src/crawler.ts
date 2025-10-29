@@ -4,7 +4,6 @@ import { Logger } from './logging/Logger.js';
 import { MetricsCollector } from './monitoring/MetricsCollector.js';
 import { getDatabase, DatabaseService } from './database/DatabaseService.js';
 import { SitemapService } from './sitemap/SitemapService.js';
-import { initAuditEnqueue, maybeEnqueueAudit } from './audits/enqueue.js';
 import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
 import { extractLinkMetadata } from './utils/linkAnalyzer.js';
 import { initSeoEnqueue, maybeEnqueueSeo } from './seo/redis-queue.js';
@@ -85,8 +84,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const startMsg = `Starting crawl for ${startUrl} (host=${allowedHost}, allowSubdomains=${allowSubdomains})`;
     log.info(startMsg);
     onLog?.(startMsg);
-        // Initialize audits enqueue with the crawl's origin
-        try { initAuditEnqueue(start.href); } catch {}
         
         // Initialize SEO enqueue with the crawl's origin
         try { await initSeoEnqueue(start.href); } catch {}
@@ -292,8 +289,6 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
             db.markSitemapUrlAsCrawled(sessionId, url);
             
             onPage?.(url);
-            // Enqueue for audits if eligible (non-blocking)
-            try { maybeEnqueueAudit(url, resolvedContentType); } catch {}
             
             // Enqueue for SEO extraction if eligible (non-blocking)
             try { await maybeEnqueueSeo(url, resolvedContentType, wordCount); } catch {}
@@ -623,12 +618,12 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     // Run audits if enabled
     if (runAudits) {
         try {
-            const auditIntegration = new CrawlAuditIntegration();
+            const auditIntegration = new CrawlAuditIntegration(sessionId);
 
             // Get crawled URLs for auditing
             const crawledPages = db.getPages(sessionId);
             const urlsToAudit = crawledPages
-                .filter(page => page.success && page.statusCode === 200)
+                .filter(page => page.success)
                 .map(page => page.url);
 
             const auditMsg = `🔍 Starting performance audits for all ${urlsToAudit.length} crawled URLs (${auditDevice})...`;

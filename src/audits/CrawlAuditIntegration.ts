@@ -19,9 +19,11 @@ export interface CrawlAuditResult {
 export class CrawlAuditIntegration {
     private logger: Logger;
     private auditResults: Map<string, CrawlAuditResult> = new Map();
+    private sessionId?: number;
 
-    constructor() {
+    constructor(sessionId?: number) {
         this.logger = Logger.getInstance();
+        this.sessionId = sessionId;
     }
 
     /**
@@ -65,7 +67,7 @@ export class CrawlAuditIntegration {
                 psiReportUrl: result.psiReportUrl,
             };
             
-            saveAudit(result.url, result.device, parsed, result.raw);
+            saveAudit(result.url, result.device, parsed, result.raw, this.sessionId);
 
             this.logger.info(`Audit completed for ${url}`, {
                 lcp: auditResult.lcp,

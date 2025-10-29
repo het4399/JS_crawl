@@ -86,7 +86,6 @@ async function getRedis(): Promise<Redis> {
       port: config.port,
       password: config.password,
       db: config.db,
-      retryDelayOnFailover: config.retryDelayOnFailover || 100,
       maxRetriesPerRequest: config.maxRetriesPerRequest || 3,
       lazyConnect: config.lazyConnect !== false,
       keyPrefix: config.keyPrefix || 'seo:'

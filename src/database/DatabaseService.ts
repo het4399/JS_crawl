@@ -519,7 +519,10 @@ export class DatabaseService {
                 psi_report_url TEXT,
                 metrics_json TEXT,
                 raw_json TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                session_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                progress INTEGER DEFAULT 0
             )
         `);
 
@@ -570,6 +573,11 @@ export class DatabaseService {
         try { this.db.exec('ALTER TABLE crawl_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
         try { this.db.exec('ALTER TABLE audit_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
         try { this.db.exec('ALTER TABLE aeo_schedules ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch {}
+
+        // Add audit_results columns for session tracking and progress
+        try { this.db.exec('ALTER TABLE audit_results ADD COLUMN session_id INTEGER'); } catch {}
+        try { this.db.exec('ALTER TABLE audit_results ADD COLUMN status TEXT DEFAULT "pending"'); } catch {}
+        try { this.db.exec('ALTER TABLE audit_results ADD COLUMN progress INTEGER DEFAULT 0'); } catch {}
 
         // Create indexes for better performance
         this.db.exec(`
@@ -2714,11 +2722,14 @@ export class DatabaseService {
         psi_report_url?: string;
         metrics_json?: Record<string, unknown>;
         raw_json?: Record<string, unknown>;
+        session_id?: number;
+        status?: 'pending' | 'running' | 'completed' | 'failed';
+        progress?: number;
     }): number {
         const stmt = this.db.prepare(`
             INSERT INTO audit_results 
-            (url, device, run_at, lcp_ms, tbt_ms, cls, fcp_ms, ttfb_ms, performance_score, psi_report_url, metrics_json, raw_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (url, device, run_at, lcp_ms, tbt_ms, cls, fcp_ms, ttfb_ms, performance_score, psi_report_url, metrics_json, raw_json, created_at, session_id, status, progress)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const timestamp = new Date().toISOString();
@@ -2735,10 +2746,85 @@ export class DatabaseService {
             data.psi_report_url ?? null,
             data.metrics_json ? JSON.stringify(data.metrics_json) : null,
             data.raw_json ? JSON.stringify(data.raw_json) : null,
-            timestamp
+            timestamp,
+            data.session_id ?? null,
+            data.status ?? 'pending',
+            data.progress ?? 0
         );
 
         return result.lastInsertRowid as number;
+    }
+
+    updateAuditResult(auditId: number, data: {
+        lcp_ms?: number;
+        tbt_ms?: number;
+        cls?: number;
+        fcp_ms?: number;
+        ttfb_ms?: number;
+        performance_score?: number;
+        psi_report_url?: string;
+        metrics_json?: Record<string, unknown>;
+        raw_json?: Record<string, unknown>;
+        status?: 'pending' | 'running' | 'completed' | 'failed';
+        progress?: number;
+    }): void {
+        const fields = [];
+        const values = [];
+        
+        if (data.lcp_ms !== undefined) { fields.push('lcp_ms = ?'); values.push(data.lcp_ms); }
+        if (data.tbt_ms !== undefined) { fields.push('tbt_ms = ?'); values.push(data.tbt_ms); }
+        if (data.cls !== undefined) { fields.push('cls = ?'); values.push(data.cls); }
+        if (data.fcp_ms !== undefined) { fields.push('fcp_ms = ?'); values.push(data.fcp_ms); }
+        if (data.ttfb_ms !== undefined) { fields.push('ttfb_ms = ?'); values.push(data.ttfb_ms); }
+        if (data.performance_score !== undefined) { fields.push('performance_score = ?'); values.push(data.performance_score); }
+        if (data.psi_report_url !== undefined) { fields.push('psi_report_url = ?'); values.push(data.psi_report_url); }
+        if (data.metrics_json !== undefined) { fields.push('metrics_json = ?'); values.push(JSON.stringify(data.metrics_json)); }
+        if (data.raw_json !== undefined) { fields.push('raw_json = ?'); values.push(JSON.stringify(data.raw_json)); }
+        if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+        if (data.progress !== undefined) { fields.push('progress = ?'); values.push(data.progress); }
+        
+        if (fields.length === 0) return;
+        
+        values.push(auditId);
+        const stmt = this.db.prepare(`UPDATE audit_results SET ${fields.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
+    }
+
+    updateAuditProgress(auditId: number, status: 'pending' | 'running' | 'completed' | 'failed', progress: number = 0): void {
+        const stmt = this.db.prepare(`
+            UPDATE audit_results 
+            SET status = ?, progress = ?
+            WHERE id = ?
+        `);
+        stmt.run(status, progress, auditId);
+    }
+
+    getAuditProgressBySession(sessionId: number): {
+        total: number;
+        completed: number;
+        failed: number;
+        pending: number;
+        running: number;
+    } {
+        const stmt = this.db.prepare(`
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running
+            FROM audit_results 
+            WHERE session_id = ?
+        `);
+        
+        const result = stmt.get(sessionId) as any;
+        return {
+            total: result.total || 0,
+            completed: result.completed || 0,
+            failed: result.failed || 0,
+            pending: result.pending || 0,
+            running: result.running || 0
+        };
     }
 
     getAuditResults(device?: 'mobile' | 'desktop', limit: number = 100, offset: number = 0): Array<{
@@ -2786,6 +2872,11 @@ export class DatabaseService {
     getAuditResultById(id: number): any | null {
         const stmt = this.db.prepare('SELECT * FROM audit_results WHERE id = ?');
         return stmt.get(id);
+    }
+
+    getAuditResult(url: string, device: 'mobile' | 'desktop'): any | null {
+        const stmt = this.db.prepare('SELECT * FROM audit_results WHERE url = ? AND device = ? ORDER BY created_at DESC LIMIT 1');
+        return stmt.get(url, device);
     }
 
     getAuditResultsByUrl(url: string, device?: 'mobile' | 'desktop', limit: number = 10): Array<any> {

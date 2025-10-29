@@ -44,7 +44,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
 
   // When initialSessionId changes on open, set the selected session and reload
   useEffect(() => {
-    if (initialSessionId && initialSessionId !== 'all') {
+    if (initialSessionId) {
       setSelectedSessionId(initialSessionId);
       setServerOffset(0);
       loadData();
