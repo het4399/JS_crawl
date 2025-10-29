@@ -490,6 +490,7 @@ app.post('/crawl',
         const db = getDatabase();
         let crawlSessionId: number | null = null;
         let auditStartTime: number | null = null;
+        let finalEmailSent = false; // Flag to prevent multiple emails
         
         sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log', userId);
         
@@ -632,7 +633,7 @@ app.post('/crawl',
                             const auditTimeout = 30 * 60 * 1000; // 30 minutes
                             const hasTimedOut = auditStartTime ? (Date.now() - auditStartTime) > auditTimeout : false;
                             
-                            if (allAuditsComplete || hasTimedOut) {
+                            if ((allAuditsComplete || hasTimedOut) && !finalEmailSent) {
                                 // Update session status to truly completed (or timed out)
                                 db.updateCrawlSession(latestSession.id, { status: 'completed' });
                                 
@@ -643,15 +644,18 @@ app.post('/crawl',
                                     status: 'completed' 
                                 }, 'session-status-update', userId);
                                 
+                                // Mark email as sent to prevent duplicates
+                                finalEmailSent = true;
+                                
                                 const user = db.getUserById(userId);
                                 const userSettings = db.getUserSettings(userId);
                                 
                                 if (user && userSettings?.emailNotifications) {
-                                    // Get crawl stats for the final email
-                                    const session = db.getCrawlSession(latestSession.id);
-                                    const totalPages = session ? session.totalPages || 0 : 0;
-                                    const duration = session ? session.duration || 0 : 0;
-                                    const pagesPerSecond = duration > 0 ? (totalPages / duration).toFixed(2) : '0';
+                                    // Get crawl stats from the session (it already has updated values)
+                                    const totalPages = latestSession.totalPages || 0;
+                                    const totalResources = latestSession.totalResources || 0;
+                                    const duration = latestSession.duration || 0;
+                                    const pagesPerSecond = duration > 0 && totalPages > 0 ? (totalPages / duration).toFixed(2) : '0';
                                     
                                     const emailSubject = hasTimedOut 
                                         ? `Crawl Completed (Audits Partial): ${safeUrl}`
