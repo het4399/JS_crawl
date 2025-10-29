@@ -14,7 +14,7 @@ interface CrawlHistoryItem {
     totalPages: number;
     totalResources: number;
     duration: number;
-    status: 'running' | 'completed' | 'failed';
+    status: 'running' | 'completed' | 'failed' | 'auditing';
   };
   aeoResult: {
     grade: string;
@@ -37,6 +37,24 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
 
   useEffect(() => {
     fetchHistory();
+  }, []);
+
+  // Listen for real-time status updates via SSE
+  useEffect(() => {
+    const eventSource = new EventSource('/events');
+    
+    eventSource.addEventListener('session-status-update', (e) => {
+      const data = JSON.parse(e.data);
+      if (data.sessionId && data.status) {
+        setHistory(prev => prev.map(item => 
+          item.session.id === data.sessionId 
+            ? { ...item, session: { ...item.session, status: data.status } }
+            : item
+        ));
+      }
+    });
+
+    return () => eventSource.close();
   }, []);
 
   const fetchHistory = async () => {
@@ -86,11 +104,12 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
     const colors = {
       running: 'bg-blue-500',
       completed: 'bg-green-500',
-      failed: 'bg-red-500'
+      failed: 'bg-red-500',
+      auditing: 'bg-yellow-500'
     };
     return (
       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colors[status as keyof typeof colors] || 'bg-gray-500'} text-white`}>
-        {status.toUpperCase()}
+        {status === 'auditing' ? 'AUDITING' : status.toUpperCase()}
       </span>
     );
   };

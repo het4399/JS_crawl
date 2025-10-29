@@ -488,6 +488,8 @@ app.post('/crawl',
     void (async () => {
         const startTime = Date.now();
         const db = getDatabase();
+        let crawlSessionId: number | null = null;
+        let auditStartTime: number | null = null;
         
         sendEvent({ type: 'log', message: `Starting crawl: ${url}` }, 'log', userId);
         
@@ -563,10 +565,12 @@ app.post('/crawl',
                     }
                     
                     // Send email notification for crawl completion (if user has notifications enabled)
+                    // Only send if no audits are enabled - otherwise wait for all audits to complete
                     try {
                         const user = db.getUserById(userId);
                         const userSettings = db.getUserSettings(userId);
-                        if (user && userSettings?.emailNotifications) {
+                        if (user && userSettings?.emailNotifications && !runAudits) {
+                            // Only send email if audits are disabled
                             await mailer.send(
                                 `Crawl Completed: ${safeUrl}`,
                                 `Hello ${user.name || user.email},\n\nYour crawl has completed successfully! 🎉\n\nURL: ${safeUrl}\nTotal Pages: ${count}\nDuration: ${durationSeconds}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`,
@@ -580,12 +584,28 @@ app.post('/crawl',
                     
                     // Update health checker
                     healthChecker.setActiveCrawls(0);
+                    
+                    // Send real-time status update if audits are running
+                    if (runAudits) {
+                        const latestSession = db.getLatestCrawlSession();
+                        if (latestSession) {
+                            sendEvent({ 
+                                type: 'session-status-update', 
+                                sessionId: latestSession.id, 
+                                status: 'auditing' 
+                            }, 'session-status-update', userId);
+                        }
+                    }
                 },
                 onAuditStart: (url) => {
+                    // Track when audits actually start
+                    if (!auditStartTime) {
+                        auditStartTime = Date.now();
+                    }
                     sendEvent({ type: 'audit-start', url }, 'audit', userId);
                     logger.info(`Starting audit for ${url}`, {}, requestId);
                 },
-                onAuditComplete: (url, success, lcp, tbt, cls, performanceScore) => {
+                onAuditComplete: async (url, success, lcp, tbt, cls, performanceScore) => {
                     sendEvent({ 
                         type: 'audit-complete', 
                         url, 
@@ -596,6 +616,59 @@ app.post('/crawl',
                         performanceScore 
                     }, 'audit', userId);
                     logger.info(`Audit completed for ${url}`, { success, lcp, tbt, cls, performanceScore }, requestId);
+                    
+                    // Check if all audits are now complete and send final email
+                    if (runAudits) {
+                        try {
+                            // Get the latest session for this user to find the sessionId
+                            const latestSession = db.getLatestCrawlSession();
+                            if (!latestSession) return;
+                            
+                            const auditProgress = db.getAuditProgressBySession(latestSession.id);
+                            const allAuditsComplete = auditProgress.total > 0 && auditProgress.completed >= auditProgress.total;
+                            
+                            // Check if audits have been running too long (timeout after 30 minutes)
+                            // Use actual audit start time, not session start time
+                            const auditTimeout = 30 * 60 * 1000; // 30 minutes
+                            const hasTimedOut = auditStartTime ? (Date.now() - auditStartTime) > auditTimeout : false;
+                            
+                            if (allAuditsComplete || hasTimedOut) {
+                                // Update session status to truly completed (or timed out)
+                                db.updateCrawlSession(latestSession.id, { status: 'completed' });
+                                
+                                // Send real-time status update via SSE
+                                sendEvent({ 
+                                    type: 'session-status-update', 
+                                    sessionId: latestSession.id, 
+                                    status: 'completed' 
+                                }, 'session-status-update', userId);
+                                
+                                const user = db.getUserById(userId);
+                                const userSettings = db.getUserSettings(userId);
+                                
+                                if (user && userSettings?.emailNotifications) {
+                                    // Get crawl stats for the final email
+                                    const session = db.getCrawlSession(latestSession.id);
+                                    const totalPages = session ? session.totalPages || 0 : 0;
+                                    const duration = session ? session.duration || 0 : 0;
+                                    const pagesPerSecond = duration > 0 ? (totalPages / duration).toFixed(2) : '0';
+                                    
+                                    const emailSubject = hasTimedOut 
+                                        ? `Crawl Completed (Audits Partial): ${safeUrl}`
+                                        : `Crawl & Audits Completed: ${safeUrl}`;
+                                    
+                                    const emailBody = hasTimedOut
+                                        ? `Hello ${user.name || user.email},\n\nYour crawl has completed! ⚠️\n\nURL: ${safeUrl}\nTotal Pages: ${totalPages}\nDuration: ${duration}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nNote: Some performance audits may not have completed due to timeout (30 minutes).\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`
+                                        : `Hello ${user.name || user.email},\n\n🎉 Your crawl and performance audits have been completed successfully!\n\nURL: ${safeUrl}\nTotal Pages: ${totalPages}\nDuration: ${duration}s\nSpeed: ${pagesPerSecond} pages/second\nCompleted: ${new Date().toLocaleString()}\n\nYour crawl and performance analysis are now fully complete.\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`;
+                                    
+                                    await mailer.send(emailSubject, emailBody, undefined, user.email);
+                                    logger.info('Final crawl and audit completion email sent', { userId, sessionId: latestSession.id }, requestId);
+                                }
+                            }
+                        } catch (error) {
+                            logger.error('Failed to send final audit completion email', error as Error, {}, requestId);
+                        }
+                    }
                 },
                 onAuditResults: (results) => {
                     sendEvent({ type: 'audit-results', results }, 'audit', userId);

@@ -565,13 +565,22 @@ export async function runCrawl(options: CrawlOptions, events: CrawlEvents = {}, 
     const startTime = startedAtIso ? new Date(startedAtIso).getTime() : Date.now();
     const duration = Math.max(0, Math.floor((endTime - startTime) / 1000));
     
+    // Set status based on whether audits are still running
+    const finalStatus = runAudits ? 'auditing' : 'completed';
+    
     db.updateCrawlSession(sessionId, {
         completedAt: new Date().toISOString(),
         totalPages,
         totalResources,
         duration,
-        status: 'completed'
+        status: finalStatus
     });
+    
+    // Send real-time status update via SSE if status is 'auditing'
+    if (finalStatus === 'auditing') {
+        // Note: We can't send SSE from here since we don't have access to sendEvent
+        // The status will be updated when audits complete
+    }
     
     const totalItems = totalPages + totalResources;
     const doneMsg = `🎉 Crawl complete! Found ${totalItems} items (${totalPages} pages, ${totalResources} resources)`;
