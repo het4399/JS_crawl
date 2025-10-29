@@ -3,9 +3,7 @@ import './AEODashboard.css';
 import DataViewer from '../crawler/DataViewer';
 import LinkExplorer from '../crawler/LinkExplorer';
 import WebTree from '../crawler/FixedWebTree';
-import ScheduleList from '../scheduler/ScheduleList';
 import AuditsPage from '../audit/AuditsPage';
-import SeoQueueManager from '../seo/SeoQueueManager';
 
 interface AEOScore {
   overall: number;
@@ -71,7 +69,7 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   discoveredPages = [],
   onStopCrawl
 }) => {
-  const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'schedules' | 'audits' | 'seo-queue'>(runCrawl ? 'crawler' : 'data');
+  const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'audits'>(runCrawl ? 'crawler' : 'data');
   // Use real data from analysis result or fallback to defaults
   const scores: AEOScore = result ? {
     overall: Math.round(result.overall_score || 0),
@@ -459,18 +457,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           >
             🔍 Performance Audits
           </button>
-          <button
-            onClick={() => setActiveView('schedules')}
-            className={`tab-button ${activeView === 'schedules' ? 'active' : ''}`}
-          >
-            📅 Schedules
-          </button>
-          <button
-            onClick={() => setActiveView('seo-queue')}
-            className={`tab-button ${activeView === 'seo-queue' ? 'active' : ''}`}
-          >
-            🔍 SEO Queue
-          </button>
         </div>
 
         {/* Tab Content */}
@@ -586,10 +572,6 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           )}
           
           {activeView === 'audits' && <AuditsPage />}
-          {activeView === 'schedules' && <ScheduleList />}
-          {activeView === 'seo-queue' && (
-            <SeoQueueManager onClose={() => setActiveView('data')} />
-          )}
         </div>
       </div>
 
