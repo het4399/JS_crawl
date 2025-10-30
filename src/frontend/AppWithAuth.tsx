@@ -79,6 +79,55 @@ const AppWithAuth: React.FC = () => {
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count}`]);
     });
 
+    // Session status updates (e.g., auditing started/completed)
+    eventSource.addEventListener('session-status-update', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const message = data?.message || `Session ${data?.status || ''}`.trim();
+        if (message) {
+          setLogs(prev => [...prev.slice(-99), message]);
+        }
+      } catch {}
+    });
+
+    // Audit events stream (audit-start, audit-complete, audit-progress)
+    eventSource.addEventListener('audit', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const formatNum = (v: unknown) => (typeof v === 'number' && isFinite(v))
+          ? v.toLocaleString(undefined, { maximumFractionDigits: 2 })
+          : undefined;
+        let message = '';
+        if (data?.type === 'audit-start') {
+          message = `🔍 Audit started: ${data.url}`;
+        } else if (data?.type === 'audit-complete') {
+          if (data.success) {
+            const parts: string[] = [];
+            const score = formatNum(data.performanceScore);
+            const lcp = formatNum(data.lcp);
+            const tbt = formatNum(data.tbt);
+            const cls = formatNum(data.cls);
+            if (score !== undefined) parts.push(`Score ${score}`);
+            if (lcp !== undefined) parts.push(`LCP ${lcp}ms`);
+            if (tbt !== undefined) parts.push(`TBT ${tbt}ms`);
+            if (cls !== undefined) parts.push(`CLS ${cls}`);
+            message = `✅ Audit: ${data.url} ${parts.length ? `(${parts.join(', ')})` : ''}`.trim();
+          } else {
+            message = `❌ Audit failed: ${data.url}${data.error ? ` - ${data.error}` : ''}`;
+          }
+        } else if (data?.type === 'audit-progress') {
+          const progress = (typeof data.progress === 'number' && isFinite(data.progress))
+            ? Number(data.progress).toLocaleString(undefined, { maximumFractionDigits: 2 })
+            : undefined;
+          const pct = progress ? `${progress}%` : '';
+          message = `⏳ Audits progress: ${data.completed}/${data.total} ${pct}`.trim();
+        }
+        if (message) {
+          setLogs(prev => [...prev.slice(-99), message]);
+        }
+      } catch {}
+    });
+
     eventSource.onerror = (error) => {
       console.error('SSE connection error:', error);
       // EventSource will automatically reconnect

@@ -2895,6 +2895,24 @@ export class DatabaseService {
         return stmt.all(...params) as any[];
     }
 
+    /**
+     * Check if a session has audits (optionally filtered by device)
+     * Returns true if at least one audit exists for the session
+     */
+    hasAuditsForSession(sessionId: number, device?: 'mobile' | 'desktop'): boolean {
+        let query = 'SELECT COUNT(*) as count FROM audit_results WHERE session_id = ?';
+        const params: any[] = [sessionId];
+        
+        if (device) {
+            query += ' AND device = ?';
+            params.push(device);
+        }
+        
+        const stmt = this.db.prepare(query);
+        const result = stmt.get(...params) as { count: number };
+        return (result.count || 0) > 0;
+    }
+
     // Session Sharing Methods
     getSessionByUrl(startUrl: string): CrawlSession | null {
         const query = `

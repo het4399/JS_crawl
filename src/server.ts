@@ -16,6 +16,7 @@ import { Logger } from './logging/Logger.js';
 import { SchedulerService } from './scheduler/SchedulerService.js';
 import { getDatabase } from './database/DatabaseService.js';
 import { AuditIntegration } from './audits/AuditIntegration.js';
+import { CrawlAuditIntegration } from './audits/CrawlAuditIntegration.js';
 import { Mailer } from './utils/Mailer.js';
 
 type Client = {
@@ -410,6 +411,205 @@ app.get('/events', authenticateUser, (req, res) => {
     });
 });
 
+/**
+ * Run audits on an existing crawl session
+ * Called when a user requests audits but the session doesn't have them
+ */
+async function runAuditsOnExistingSession(
+    sessionId: number,
+    device: 'mobile' | 'desktop',
+    userId: number
+): Promise<void> {
+    const logger = Logger.getInstance();
+    const db = getDatabase();
+    
+    try {
+        logger.info(`Running audits on existing session ${sessionId}`, { userId, device });
+        
+        // Update session status to 'auditing'
+        db.updateCrawlSession(sessionId, { status: 'auditing' });
+        
+        // Notify user via SSE that audits are starting
+        sendEvent({
+            type: 'session-status-update',
+            sessionId: sessionId,
+            status: 'auditing',
+            message: 'Running performance audits...'
+        }, 'session-status-update', userId);
+        
+        // Get crawled URLs for auditing (all pages, not just successful ones)
+        // Use a high limit to get all pages from the session
+        const crawledPages = db.getPages(sessionId, 100000, 0);
+        const urlsToAudit = crawledPages
+            // Filter to only HTML pages (not resources like CSS, JS, images)
+            // Note: getPages() already returns only pages (not resources), but we filter by contentType as extra safety
+            .filter(page => {
+                const contentType = (page.contentType || '').toLowerCase();
+                // Include HTML pages (text/html, application/xhtml+xml, etc.)
+                return contentType.includes('text/html') || 
+                       contentType.includes('application/xhtml') ||
+                       contentType.includes('html') ||
+                       // If contentType is missing/unknown, include it (likely HTML page)
+                       (!contentType || contentType === 'unknown');
+            })
+            .map(page => page.url);
+        
+        if (urlsToAudit.length === 0) {
+            logger.warn(`No valid URLs found for auditing in session ${sessionId}`);
+            db.updateCrawlSession(sessionId, { status: 'completed' });
+            sendEvent({
+                type: 'session-status-update',
+                sessionId: sessionId,
+                status: 'completed',
+                message: 'No URLs to audit'
+            }, 'session-status-update', userId);
+            return;
+        }
+        
+        const auditIntegration = new CrawlAuditIntegration(sessionId);
+        
+        // Use same batch processing logic as crawler.ts
+        const totalUrls = urlsToAudit.length;
+        let batchSize = 8;
+        
+        if (totalUrls > 50) {
+            batchSize = 12;
+        } else if (totalUrls > 20) {
+            batchSize = 10;
+        }
+        
+        const batches = [];
+        for (let i = 0; i < urlsToAudit.length; i += batchSize) {
+            batches.push(urlsToAudit.slice(i, i + batchSize));
+        }
+        
+        const startTime = Date.now();
+        let completedAudits = 0;
+        let successfulAudits = 0;
+        
+        logger.info(`Processing ${totalUrls} audits in ${batches.length} batches`, {
+            sessionId,
+            device,
+            batchSize
+        });
+        
+        // Process batches
+        for (const batch of batches) {
+            const batchPromises = batch.map(async (url) => {
+                try {
+                    // Notify audit start
+                    sendEvent({ type: 'audit-start', url }, 'audit', userId);
+                    
+                    // Run audit
+                    const auditResult = await auditIntegration.runAuditForUrl(url, device);
+                    
+                    completedAudits++;
+                    if (auditResult.success) {
+                        successfulAudits++;
+                    }
+                    
+                    // Notify audit completion
+                    sendEvent({
+                        type: 'audit-complete',
+                        url,
+                        success: auditResult.success,
+                        lcp: auditResult.lcp,
+                        tbt: auditResult.tbt,
+                        cls: auditResult.cls,
+                        performanceScore: auditResult.performanceScore
+                    }, 'audit', userId);
+                    
+                    // Send progress update
+                    const progress = Math.round((completedAudits / totalUrls) * 100);
+                    sendEvent({
+                        type: 'audit-progress',
+                        sessionId,
+                        completed: completedAudits,
+                        total: totalUrls,
+                        progress,
+                        successful: successfulAudits
+                    }, 'audit', userId);
+                    
+                    return { url, success: auditResult.success };
+                } catch (error) {
+                    logger.error(`Audit failed for ${url}`, error as Error);
+                    completedAudits++;
+                    
+                    sendEvent({
+                        type: 'audit-complete',
+                        url,
+                        success: false,
+                        error: (error as Error).message
+                    }, 'audit', userId);
+                    
+                    return { url, success: false };
+                }
+            });
+            
+            await Promise.all(batchPromises);
+            
+            // Small delay between batches
+            if (batches.indexOf(batch) < batches.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+        
+        // Update session status to completed
+        db.updateCrawlSession(sessionId, { status: 'completed' });
+        
+        const duration = Date.now() - startTime;
+        
+        // Send completion event
+        sendEvent({
+            type: 'session-status-update',
+            sessionId: sessionId,
+            status: 'completed',
+            message: `Audits completed: ${successfulAudits}/${totalUrls} successful`
+        }, 'session-status-update', userId);
+        
+        logger.info(`Audits completed for session ${sessionId}`, {
+            totalUrls,
+            successfulAudits,
+            failedAudits: totalUrls - successfulAudits,
+            duration: `${duration}ms`
+        });
+        
+        // Send email notification if enabled
+        try {
+            const user = db.getUserById(userId);
+            const userSettings = db.getUserSettings(userId);
+            if (user && userSettings?.emailNotifications) {
+                const session = db.getCrawlSession(sessionId);
+                if (session) {
+                    await mailer.send(
+                        `Performance Audits Completed: ${session.startUrl}`,
+                        `Hello ${user.name || user.email},\n\n🎉 Performance audits have been completed!\n\nURL: ${session.startUrl}\nTotal Pages: ${session.totalPages}\nAudits Completed: ${successfulAudits}/${totalUrls}\nDuration: ${Math.round(duration / 1000)}s\nCompleted: ${new Date().toLocaleString()}\n\nView your results in the dashboard: ${process.env.APP_URL || 'http://localhost:3004'}\n\nBest regards,\nContentlytics Team`,
+                        undefined,
+                        user.email
+                    );
+                }
+            }
+        } catch (error) {
+            logger.error('Failed to send audit completion email', error as Error);
+        }
+        
+    } catch (error) {
+        logger.error(`Failed to run audits on session ${sessionId}`, error as Error);
+        
+        // Update session status back to completed (even on error)
+        db.updateCrawlSession(sessionId, { status: 'completed' });
+        
+        // Notify user of error
+        sendEvent({
+            type: 'session-status-update',
+            sessionId: sessionId,
+            status: 'completed',
+            error: (error as Error).message,
+            message: 'Audit execution failed'
+        }, 'session-status-update', userId);
+    }
+}
+
 app.post('/crawl', 
     authenticateUser,              // Require authentication
     checkUsageLimit('crawl'),      // Check daily usage limit
@@ -441,16 +641,272 @@ app.post('/crawl',
         const db = getDatabase();
         existingSession = db.getSessionByUrl(safeUrl);
         
-        // If session exists, always reuse it (regardless of owner)
         if (existingSession) {
+            // Share session with user first
             db.shareSessionWithUser(existingSession.id, userId);
-            logger.info('Session reused', { sessionId: existingSession.id, userId, url: safeUrl });
+            
+            // Check if audits are requested
+            if (runAudits) {
+                // Check if session has audits for the requested device
+                const requestedDevice = auditDevice === 'mobile' ? 'mobile' : 'desktop';
+                const hasAudits = db.hasAuditsForSession(existingSession.id, requestedDevice);
+                
+                // Re-fetch session to get current status (avoid race condition)
+                // This ensures we see the latest status even if another user just triggered audits
+                const currentSession = db.getCrawlSession(existingSession.id);
+                const isAuditing = currentSession?.status === 'auditing';
+                
+                // Check if audits exist for ANY device (to detect if audits are running for a different device)
+                const hasAnyAudits = db.hasAuditsForSession(existingSession.id);
+                
+                if (hasAudits) {
+                    // Audits already exist for this device, reuse normally
+                    logger.info('Session reused with existing audits', {
+                        sessionId: existingSession.id,
+                        userId,
+                        device: requestedDevice,
+                        url: safeUrl
+                    });
+                } else if (isAuditing && hasAnyAudits) {
+                    // Status is 'auditing' AND audits exist for other devices
+                    // This means audits are running for a DIFFERENT device
+                    // But double-check to ensure audits don't exist for requested device (race condition prevention)
+                    const finalCheck = db.hasAuditsForSession(existingSession.id, requestedDevice);
+                    if (finalCheck) {
+                        // Audits now exist for requested device (race condition: audits completed between checks)
+                        logger.info('Session reused, audits now exist for requested device (race condition handled)', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            hasAudits: true,
+                            message: `Reusing crawl data with existing audits`
+                        });
+                    }
+                    
+                    // We can trigger audits for the requested device in parallel
+                    logger.info('Session reused, audits running for different device, triggering audits for requested device', {
+                        sessionId: existingSession.id,
+                        userId,
+                        device: requestedDevice,
+                        url: safeUrl
+                    });
+                    
+                    // Run audits in background (non-blocking)
+                    void runAuditsOnExistingSession(
+                        existingSession.id,
+                        requestedDevice,
+                        userId
+                    );
+                    
+                    return res.status(200).json({ 
+                        ok: true, 
+                        reuseMode: true, 
+                        sessionId: existingSession.id, 
+                        url: safeUrl,
+                        auditsTriggered: true,
+                        message: `Reusing crawl data. Running performance audits in the background...`
+                    });
+                } else if (isAuditing && !hasAnyAudits) {
+                    // Status is 'auditing' but NO audits exist yet
+                    // This means audits were just triggered (< 1 second ago)
+                    // Wait a moment, then check if audits exist for requested device
+                    // If they exist, they're for the requested device (don't trigger duplicate)
+                    // If they don't exist, they're for a different device (can trigger)
+                    
+                    // Small delay to allow first audit result to be saved
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    // Re-check after delay
+                    const refreshedSession = db.getCrawlSession(existingSession.id);
+                    const refreshedHasAudits = db.hasAuditsForSession(existingSession.id, requestedDevice);
+                    const refreshedHasAnyAudits = db.hasAuditsForSession(existingSession.id);
+                    const stillAuditing = refreshedSession?.status === 'auditing';
+                    
+                    if (refreshedHasAudits) {
+                        // Audits now exist for requested device - they were for this device
+                        logger.info('Session reused, audits confirmed for requested device', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            auditsInProgress: true,
+                            message: `Reusing crawl data. Audits are already running for this device...`
+                        });
+                    } else if (stillAuditing && refreshedHasAnyAudits) {
+                        // Still auditing, but audits exist for OTHER devices
+                        // Safe to trigger for requested device
+                        logger.info('Session reused, audits running for different device (confirmed), triggering for requested device', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        void runAuditsOnExistingSession(
+                            existingSession.id,
+                            requestedDevice,
+                            userId
+                        );
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            auditsTriggered: true,
+                            message: `Reusing crawl data. Running performance audits in the background...`
+                        });
+                    } else if (!stillAuditing) {
+                        // Auditing completed while we waited, check if audits exist now
+                        const finalHasAudits = db.hasAuditsForSession(existingSession.id, requestedDevice);
+                        if (finalHasAudits) {
+                            logger.info('Session reused, audits completed for requested device', {
+                                sessionId: existingSession.id,
+                                userId,
+                                device: requestedDevice,
+                                url: safeUrl
+                            });
+                        } else {
+                            // Completed but no audits for requested device - trigger
+                            logger.info('Session reused, audits completed for different device, triggering for requested device', {
+                                sessionId: existingSession.id,
+                                userId,
+                                device: requestedDevice,
+                                url: safeUrl
+                            });
+                            
+                            void runAuditsOnExistingSession(
+                                existingSession.id,
+                                requestedDevice,
+                                userId
+                            );
+                            
+                            return res.status(200).json({ 
+                                ok: true, 
+                                reuseMode: true, 
+                                sessionId: existingSession.id, 
+                                url: safeUrl,
+                                auditsTriggered: true,
+                                message: `Reusing crawl data. Running performance audits in the background...`
+                            });
+                        }
+                    } else {
+                        // Still auditing, no audits yet - assume they're for requested device (safe default)
+                        logger.info('Session reused, audits just started (uncertain device), waiting', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            auditsInProgress: true,
+                            message: `Reusing crawl data. Audits are already running for this session...`
+                        });
+                    }
+                } else {
+                    // !hasAudits && !isAuditing
+                    // Session exists but doesn't have audits and not currently auditing
+                    // But double-check status one more time to prevent race condition with concurrent requests
+                    const finalStatusCheck = db.getCrawlSession(existingSession.id);
+                    const finalIsAuditing = finalStatusCheck?.status === 'auditing';
+                    const finalHasAudits = db.hasAuditsForSession(existingSession.id, requestedDevice);
+                    
+                    if (finalHasAudits) {
+                        // Audits now exist (race condition: another request completed audits)
+                        logger.info('Session reused, audits now exist (race condition handled)', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            hasAudits: true,
+                            message: `Reusing crawl data with existing audits`
+                        });
+                    } else if (finalIsAuditing) {
+                        // Audits just started (race condition: another request triggered audits)
+                        logger.info('Session reused, audits just started by another request (race condition handled)', {
+                            sessionId: existingSession.id,
+                            userId,
+                            device: requestedDevice,
+                            url: safeUrl
+                        });
+                        
+                        return res.status(200).json({ 
+                            ok: true, 
+                            reuseMode: true, 
+                            sessionId: existingSession.id, 
+                            url: safeUrl,
+                            auditsInProgress: true,
+                            message: `Reusing crawl data. Audits are already running for this session...`
+                        });
+                    }
+                    
+                    // Safe to trigger audits
+                    logger.info('Session reused but audits missing, triggering audits', {
+                        sessionId: existingSession.id,
+                        userId,
+                        device: requestedDevice,
+                        url: safeUrl
+                    });
+                    
+                    // Run audits in background (non-blocking)
+                    void runAuditsOnExistingSession(
+                        existingSession.id,
+                        requestedDevice,
+                        userId
+                    );
+                    
+                    return res.status(200).json({ 
+                        ok: true, 
+                        reuseMode: true, 
+                        sessionId: existingSession.id, 
+                        url: safeUrl,
+                        auditsTriggered: true,
+                        message: `Reusing crawl data. Running performance audits in the background...`
+                    });
+                }
+            }
+            
+            // Normal reuse (no audits requested OR audits already exist)
+            logger.info('Session reused', { 
+                sessionId: existingSession.id, 
+                userId, 
+                url: safeUrl,
+                hasAudits: runAudits ? true : undefined
+            });
             
             return res.status(200).json({ 
                 ok: true, 
                 reuseMode: true, 
                 sessionId: existingSession.id, 
                 url: safeUrl,
+                hasAudits: runAudits ? true : undefined,
                 message: `Reusing crawl data from ${existingSession.completedAt ? new Date(existingSession.completedAt).toLocaleString() : 'earlier'}`
             });
         }
