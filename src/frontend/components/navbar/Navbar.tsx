@@ -31,7 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="navbar">
             <div className="navbar-container">
                 {/* Logo */}
-                <button
+                <button type="button"
                     onClick={() => onNavigate('home')}
                     className="navbar-logo"
                 >
@@ -55,7 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             </div>
 
                             {/* Navigation Buttons */}
-                            <button
+                            <button type="button"
                                 onClick={() => onNavigate('history')}
                                 className={`nav-btn ${currentView === 'history' ? 'nav-btn-active' : ''}`}
                             >
@@ -63,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                                 <span>History</span>
                             </button>
 
-                            <button
+                            <button type="button"
                                 onClick={() => onNavigate('profile')}
                                 className={`nav-btn ${currentView === 'profile' ? 'nav-btn-active' : ''}`}
                             >
@@ -71,7 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                                 <span>Profile</span>
                             </button>
                             
-                            <button
+                            <button type="button"
                                 onClick={() => onNavigate('settings')}
                                 className={`nav-btn ${currentView === 'settings' ? 'nav-btn-active' : ''}`}
                             >
@@ -79,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                                 <span>Settings</span>
                             </button>
                             
-                            <button
+                            <button type="button"
                                 onClick={onLogout}
                                 className="nav-btn nav-btn-danger"
                             >
@@ -89,13 +89,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </>
                     ) : (
                         <>
-                            <button
+                            <button type="button"
                                 onClick={() => onNavigate('login')}
                                 className="nav-btn nav-btn-secondary"
                             >
                                 Sign In
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={() => onNavigate('register')}
                                 className="nav-btn nav-btn-primary"
                             >

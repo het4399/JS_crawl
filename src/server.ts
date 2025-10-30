@@ -614,7 +614,7 @@ app.post('/crawl',
     authenticateUser,              // Require authentication
     checkUsageLimit('crawl'),      // Check daily usage limit
     async (req, res) => {
-    const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice, captureLinkDetails } = req.body ?? {};
+    const { url, allowSubdomains, maxConcurrency, mode, runAudits, auditDevice, captureLinkDetails, forceRecrawl } = req.body ?? {};
     if (!url) return res.status(400).json({ error: 'url is required' });
 
     // Normalize and validate URL input
@@ -635,11 +635,13 @@ app.post('/crawl',
 
     const userId = req.user!.userId; // Get authenticated user ID
 
-    // Check if a completed session already exists for this URL
+    // Check if a completed session already exists for this URL (unless forceRecrawl)
     let existingSession = null;
     try {
         const db = getDatabase();
-        existingSession = db.getSessionByUrl(safeUrl);
+        if (!forceRecrawl) {
+            existingSession = db.getSessionByUrl(safeUrl);
+        }
         
         if (existingSession) {
             // Share session with user first

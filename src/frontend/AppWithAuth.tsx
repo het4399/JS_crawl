@@ -15,7 +15,7 @@ import { apiService, AnalysisResult } from './api';
 type View = 'home' | 'login' | 'register' | 'profile' | 'settings' | 'history';
 
 const AppWithAuth: React.FC = () => {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, refreshUser } = useAuth();
   const [currentView, setCurrentView] = useState<View>('home');
   const [url, setUrl] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -176,6 +176,17 @@ const AppWithAuth: React.FC = () => {
     return `https://${trimmed}`;
   };
 
+  // Reuse prompt state
+  const [reusePrompt, setReusePrompt] = React.useState<null | {
+    sessionId: number;
+    url: string;
+    hasAudits?: boolean;
+    auditsTriggered?: boolean;
+    auditsInProgress?: boolean;
+    message?: string;
+  }>(null);
+  const [reuseRunAudits, setReuseRunAudits] = React.useState<boolean>(false);
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!url.trim()) return;
@@ -206,6 +217,21 @@ const AppWithAuth: React.FC = () => {
           })
         : await apiService.analyzeUrl(normalizedUrl);
       
+      // Show reuse modal if server indicates reuse
+      if ((analysisResult as any)?.reuseMode && (analysisResult as any)?.sessionId) {
+        setIsCrawling(false);
+        setLoading(false);
+        setReusePrompt({
+          sessionId: (analysisResult as any).sessionId,
+          url: (analysisResult as any).url || normalizedUrl,
+          hasAudits: (analysisResult as any).hasAudits,
+          auditsTriggered: (analysisResult as any).auditsTriggered,
+          auditsInProgress: (analysisResult as any).auditsInProgress,
+          message: (analysisResult as any).message,
+        });
+        return;
+      }
+
       setResult(analysisResult);
       
       // If this was a reused session, extract and populate the session data
@@ -264,6 +290,150 @@ const AppWithAuth: React.FC = () => {
     } finally {
       setLoading(false);
       setIsCrawling(false);
+    }
+  };
+
+  // Handle reuse modal actions
+  const handleViewPrevious = async () => {
+    if (!reusePrompt) return;
+    try {
+      setLoading(true);
+      const sessionData = await apiService.getSessionData(reusePrompt.sessionId);
+      // Fetch AEO results for this session to populate the dashboard metrics
+      let aeoResult: any = null;
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const aeoRes = await fetch(`/aeo/results/${reusePrompt.sessionId}`, {
+          headers,
+          credentials: 'include'
+        });
+        if (aeoRes.ok) {
+          aeoResult = await aeoRes.json();
+        }
+      } catch {}
+      const sessionPages = (sessionData.data || [])
+        .filter((item: any) => item.resourceType === 'page')
+        .map((page: any) => page.url);
+      setPages(sessionPages);
+      setPageCount(sessionData.totalPages || sessionPages.length);
+      if (sessionData.logs && Array.isArray(sessionData.logs)) {
+        setLogs(sessionData.logs.map((l: any) => l.message));
+      }
+      if (sessionData.session) {
+        const totalItems = (sessionData.totalPages || 0) + (sessionData.totalResources || 0);
+        setCrawlStats({
+          count: totalItems,
+          duration: sessionData.session.duration || 0,
+          pagesPerSecond: totalItems && sessionData.session.duration
+            ? parseFloat((totalItems / sessionData.session.duration).toFixed(2))
+            : 0
+        });
+      }
+      // Build and set AnalysisResult for dashboard metrics
+      if (aeoResult && aeoResult.results) {
+        const r = aeoResult.results;
+        setResult({
+          success: true,
+          url: reusePrompt.url,
+          grade: r.grade || 'N/A',
+          grade_color: r.gradeColor || '#666666',
+          overall_score: r.overallScore || 0,
+          module_scores: r.moduleScores,
+          module_weights: r.moduleWeights,
+          detailed_analysis: r.detailedAnalysis,
+          structured_data: r.structuredData,
+          all_recommendations: r.recommendations,
+          errors: r.errors,
+          warnings: r.warnings,
+          analysis_timestamp: r.analysisTimestamp,
+          run_id: r.runId,
+        } as AnalysisResult);
+      } else {
+        // Minimal placeholder to render dashboard if no AEO exists
+        setResult({
+          success: true,
+          url: reusePrompt.url,
+          grade: 'N/A',
+          grade_color: '#666666',
+          overall_score: 0,
+          module_scores: {
+            ai_presence: 0,
+            competitor_analysis: 0,
+            knowledge_base: 0,
+            answerability: 0,
+            crawler_accessibility: 0,
+          },
+          module_weights: {
+            ai_presence: 0,
+            competitor: 0,
+            strategy_review: 0,
+          },
+          detailed_analysis: {
+            ai_presence: {},
+            competitor_analysis: {},
+            knowledge_base: {},
+            answerability: {},
+            crawler_accessibility: {},
+          },
+          structured_data: {
+            total_schemas: 0,
+            valid_schemas: 0,
+            invalid_schemas: 0,
+            schema_types: [],
+            coverage_score: 0,
+            quality_score: 0,
+            completeness_score: 0,
+            seo_relevance_score: 0,
+            details: {},
+          },
+          all_recommendations: [],
+          errors: [],
+          warnings: [],
+        } as AnalysisResult);
+      }
+      setRunCrawl(true);
+      // Optionally trigger audits on existing session
+      if (reuseRunAudits) {
+        try {
+          await fetch('/crawl', {
+            method: 'POST',
+            headers: (apiService as any).getAuthHeaders?.() || { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ url: reusePrompt.url, runAudits: true, auditDevice })
+          });
+        } catch {}
+      }
+      setReusePrompt(null);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load previous results');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRecrawl = async () => {
+    if (!reusePrompt) return;
+    try {
+      setReusePrompt(null);
+      setLoading(true);
+      setIsCrawling(true);
+      setLogs([]);
+      setPages([]);
+      setCrawlStats(null);
+      const analysisResult = await apiService.analyzeUrl(reusePrompt.url, {
+        allowSubdomains,
+        runAudits: reuseRunAudits || runAudits,
+        auditDevice,
+        captureLinkDetails,
+        forceRecrawl: true,
+      });
+      setResult(analysisResult);
+    } catch (e: any) {
+      setError(e.message || 'Failed to start re-crawl');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -475,7 +645,12 @@ const AppWithAuth: React.FC = () => {
       <Navbar
         user={user}
         isAuthenticated={isAuthenticated}
-        onNavigate={setCurrentView}
+        onNavigate={async (v) => {
+          if (v === 'profile') {
+            try { await refreshUser(); } catch {}
+          }
+          setCurrentView(v);
+        }}
         onLogout={logout}
         currentView={currentView}
       />
@@ -594,6 +769,84 @@ const AppWithAuth: React.FC = () => {
                 setIsCrawling(false);
               }}
             />
+          </div>
+        )}
+        {/* Reuse Modal */}
+        {reusePrompt && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+            onClick={() => setReusePrompt(null)}
+          >
+            <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-sm" />
+            <div
+              className="relative w-[560px] max-w-[92vw] rounded-2xl border border-gray-700/70 bg-gray-900 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close (X) button, matching existing close style */}
+              <button
+                aria-label="Close modal"
+                onClick={() => setReusePrompt(null)}
+                className="close-button absolute top-3 right-3"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/>
+                </svg>
+              </button>
+              <div className="px-6 pt-6 pb-4 border-b border-gray-800">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/10 text-purple-300 ring-1 ring-purple-600/25">🔁</div>
+                  <div>
+                    <h3 className="m-0 text-lg font-semibold text-gray-100">Previous crawl found</h3>
+                    <p className="m-0 mt-1 text-sm text-gray-400">
+                      {reusePrompt.message || 'We found a recent crawl for this URL. What would you like to do?'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-lg bg-gray-800 p-3 text-sm text-gray-300 ring-1 ring-gray-700">
+                  <span className="text-gray-400">URL:</span> <span className="break-all text-gray-200">{reusePrompt.url}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {reusePrompt.hasAudits && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/25">Audits available</span>
+                  )}
+                  {reusePrompt.auditsInProgress && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-500/25">Audits in progress</span>
+                  )}
+                  {reusePrompt.auditsTriggered && !reusePrompt.auditsInProgress && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-500/25">Audits will start</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 py-5">
+                <label className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={reuseRunAudits}
+                    onChange={(e) => setReuseRunAudits(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
+                  />
+                <span className="text-sm text-gray-300">Run performance audits</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 border-t border-gray-800 px-6 py-4">
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg border border-purple-500/40 bg-gradient-to-r from-purple-600 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow hover:from-purple-500 hover:to-fuchsia-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 transition"
+                  onClick={handleViewPrevious}
+                >
+                  <span>👁️</span>
+                  <span>View previous</span>
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/40 bg-gradient-to-r from-indigo-600 to-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:from-indigo-500 hover:to-sky-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition"
+                  onClick={handleRecrawl}
+                >
+                  <span>🔄</span>
+                  <span>Re-crawl now</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
