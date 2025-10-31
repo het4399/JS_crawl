@@ -35,11 +35,15 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
   const [serverOffset, setServerOffset] = useState(0);
   const [serverLimit] = useState(1000);
   const [sessions, setSessions] = useState<Array<{ id: number; startedAt: string; completedAt?: string; scheduleId?: number }>>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | 'all'>(initialSessionId ?? 'all');
+  const [selectedSessionId, setSelectedSessionId] = useState<number | ''>(initialSessionId ?? '');
 
   useEffect(() => {
     loadSessions();
-    loadData();
+    if (selectedSessionId !== '') {
+      loadData();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   // When initialSessionId changes on open, set the selected session and reload
@@ -57,7 +61,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
       const params = new URLSearchParams();
       params.set('limit', String(serverLimit));
       params.set('offset', String(opts?.append ? serverOffset : 0));
-      if (selectedSessionId !== 'all') params.set('sessionId', String(selectedSessionId));
+      if (selectedSessionId !== '') params.set('sessionId', String(selectedSessionId));
       const response = await fetch(`/api/data/list?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to load data');
       
@@ -133,7 +137,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
     try {
       const params = new URLSearchParams();
       params.set('format', format);
-      if (selectedSessionId !== 'all') {
+      if (selectedSessionId !== '') {
         params.set('sessionId', String(selectedSessionId));
       }
       const response = await fetch(`/api/export?${params.toString()}`);
@@ -143,7 +147,7 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `crawl-data${selectedSessionId !== 'all' ? `-session-${selectedSessionId}` : ''}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${format}`;
+      a.download = `crawl-data${selectedSessionId !== '' ? `-session-${selectedSessionId}` : ''}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -151,27 +155,6 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
     } catch (error) {
       console.error('Export failed:', error);
       alert('Export failed. Please try again.');
-    }
-  };
-
-  const clearAllData = async () => {
-    if (!confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/data/clear', { method: 'DELETE' });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to clear data');
-      }
-      
-      const result = await response.json();
-      setData([]);
-      alert(`✅ ${result.message || 'All data cleared successfully!'}`);
-    } catch (error) {
-      console.error('Clear failed:', error);
-      alert(`❌ Failed to clear data: ${(error as Error).message}`);
     }
   };
 
@@ -243,15 +226,17 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
             <select
               value={selectedSessionId}
               onChange={(e) => {
-                const v = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                const v = e.target.value === '' ? '' : Number(e.target.value);
                 setSelectedSessionId(v);
-                setServerOffset(0);
-                loadData();
+                if (v !== '') {
+                  setServerOffset(0);
+                  loadData();
+                }
               }}
               className="search-input"
               title="Filter by session"
             >
-              <option value="all">All sessions</option>
+              <option value="" disabled>Select a session</option>
               {sessions.map(s => (
                 <option key={s.id} value={s.id}>
                   Session #{s.id} {s.startedAt ? `(${new Date(s.startedAt).toLocaleString()})` : ''}
@@ -272,9 +257,6 @@ const DataViewer: React.FC<DataViewerProps> = ({ onClose, initialSessionId }) =>
             </button>
             <button onClick={() => exportData('xml')} className="export-btn">
               📋 XML
-            </button>
-            <button onClick={clearAllData} className="clear-btn">
-              🗑️ Clear All
             </button>
           </div>
         </div>

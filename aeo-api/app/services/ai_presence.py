@@ -199,15 +199,54 @@ class AIPresenceService:
             content_checks = self._extract_org_and_meta(html or '', jsonld)
             
             # Multi-AI Content Understanding Analysis
+            # Always do API calls if API keys exist (regardless of robots.txt)
+            # But only award points for bots that are allowed in robots.txt
             ai_understanding = {}
+            bot_to_provider = {
+                'GPTBot': 'openai',
+                'Google-Extended': 'gemini',
+                'ClaudeBot': 'claude'
+            }
+            
             if html:
                 # Extract text content for AI analysis
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(html, 'html.parser')
                 text_content = soup.get_text()
                 
-                # Get multi-AI understanding analysis
+                # Get multi-AI understanding analysis (for ALL providers with API keys)
+                # This runs regardless of robots.txt status
                 ai_understanding = self.multi_ai_service.analyze_content_understanding(text_content, url)
+                
+                # Calculate overall_score only from allowed bots (for point calculation)
+                # This ensures blocked bots don't contribute to the overall AI Presence score
+                allowed_provider_scores = []
+                
+                for label, _ in self.ai_bot_agents:
+                    bot_key = label.lower()
+                    is_allowed = robots_checks.get(f'robots_{bot_key}', True)
+                    provider_key = bot_to_provider.get(label)
+                    
+                    # Only include in overall_score calculation if:
+                    # 1. Bot is allowed in robots.txt
+                    # 2. We have understanding data from that provider (API key exists)
+                    if is_allowed and provider_key and ai_understanding.get(provider_key):
+                        provider_data = ai_understanding.get(provider_key)
+                        if provider_data and not provider_data.get('error'):
+                            score = provider_data.get('score', 0)
+                            if score > 0:  # Only count valid scores
+                                allowed_provider_scores.append(score)
+                
+                # Calculate average from allowed bots only
+                # This overall_score is used for the 20-point AI understanding category
+                if allowed_provider_scores:
+                    ai_understanding['overall_score'] = sum(allowed_provider_scores) // len(allowed_provider_scores)
+                else:
+                    # No allowed bots with valid understanding scores
+                    ai_understanding['overall_score'] = 0
+                
+                # Note: ai_understanding still contains all provider data (even from blocked bots)
+                # This allows frontend to show all understanding data, but scoring only uses allowed bots
 
             # Scoring
             score = 0
@@ -253,7 +292,8 @@ class AIPresenceService:
                 score += 15
             
             # 20 pts AI Content Understanding (Multi-AI)
-            if ai_understanding and 'overall_score' in ai_understanding:
+            # Only count points if we have valid understanding from allowed bots
+            if ai_understanding and 'overall_score' in ai_understanding and ai_understanding['overall_score'] > 0:
                 ai_score = ai_understanding.get('overall_score', 0)
                 score += min(20, ai_score // 5)  # Convert 0-100 to 0-20 points
 
@@ -326,7 +366,7 @@ class AIPresenceService:
                         }
                     }
                 else:
-                    # Each bot gets points based on robots.txt allowance and other factors
+                    # Calculate bot accessibility score (based on robots.txt allowance + technical setup)
                     bot_score = 20  # Base score for being allowed
                     if content_checks.get('org_schema_present'):
                         bot_score += 15  # Organization schema helps
@@ -335,16 +375,54 @@ class AIPresenceService:
                     if content_checks.get('open_graph_present'):
                         bot_score += 5   # OG tags helps
                     
+                    # Get AI understanding data for this bot (if API key exists)
+                    provider_key = bot_to_provider.get(label)
+                    understanding_data = None
+                    understanding_score = None
+                    
+                    if provider_key and ai_understanding and ai_understanding.get(provider_key):
+                        provider_data = ai_understanding.get(provider_key)
+                        if provider_data and not provider_data.get('error'):
+                            understanding_data = provider_data
+                            understanding_score = provider_data.get('score', 0)
+                    
+                    # Determine display score:
+                    # Priority: AI Understanding Score > Bot Accessibility Score
+                    # Only show AI understanding if bot is allowed AND we have understanding data
+                    if understanding_score is not None:
+                        display_score = understanding_score
+                        score_type = 'ai_understanding'
+                    else:
+                        display_score = bot_score
+                        score_type = 'bot_accessibility'
+                    
+                    # Build platform details
+                    platform_details = {
+                        'robots_allowed': True,
+                        'org_schema': content_checks.get('org_schema_present', False),
+                        'sitemap': robots_checks.get('sitemap_present', False),
+                        'og_tags': content_checks.get('open_graph_present', False),
+                        'bot_accessibility_score': bot_score,
+                        'score_type': score_type,
+                        'ai_understanding_available': understanding_data is not None
+                    }
+                    
+                    # Add AI understanding details if available
+                    if understanding_data:
+                        platform_details.update({
+                            'ai_understanding_score': understanding_score,
+                            'understanding_level': understanding_data.get('understanding_level'),
+                            'clarity_score': understanding_data.get('clarity_score'),
+                            'key_topics': understanding_data.get('key_topics', []),
+                            'main_issues': understanding_data.get('main_issues', []),
+                            'recommendations': understanding_data.get('recommendations', [])
+                        })
+                    
                     platforms[label] = {
-                        'score': min(100, bot_score),
+                        'score': display_score,
                         'status': 'LIVE',
                         'allowed': True,
-                        'details': {
-                            'robots_allowed': True,
-                            'org_schema': content_checks.get('org_schema_present', False),
-                            'sitemap': robots_checks.get('sitemap_present', False),
-                            'og_tags': content_checks.get('open_graph_present', False)
-                        }
+                        'details': platform_details
                     }
 
             return {

@@ -182,7 +182,8 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     // Track which platforms we've already added to avoid duplicates
     const addedPlatforms = new Set<string>();
     
-    // Check if the API provides platform-specific data (Bot Accessibility Scores)
+    // Process platforms data from backend
+    // Backend already handles: score calculation, AI understanding merging, bot accessibility
     if (aiData.platforms && typeof aiData.platforms === 'object') {
       Object.entries(aiData.platforms).forEach(([name, data]: [string, any]) => {
         // Map bot names to AI provider names for display
@@ -190,25 +191,35 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                           name === 'Google-Extended' ? 'Gemini' : 
                           name === 'ClaudeBot' ? 'Claude' : name;
         
+        // Backend already provides the correct score and all details
+        // Score is either:
+        // - AI understanding score (if bot allowed + API key exists)
+        // - Bot accessibility score (if bot allowed but no API key)
+        // - 0 (if bot blocked)
         platforms.push({
           name: displayName,
           icon: platformIcons[name] || platformIcons[displayName] || name.charAt(0).toUpperCase(),
-          score: Math.round(data.score || data.visibility_score || 0),
+          score: Math.round(data.score || 0),
           status: data.status || 'LIVE',
           details: {
             ...data.details,
-            scoreType: 'bot_accessibility' // Mark as bot accessibility score
+            // Backend provides: score_type, ai_understanding_score, bot_accessibility_score,
+            // understanding_level, clarity_score, key_topics, etc.
+            scoreType: data.details?.score_type || 'bot_accessibility'
           }
         });
         addedPlatforms.add(displayName.toLowerCase());
       });
     }
 
-    // Check if multi-AI analysis is available (AI Understanding Scores)
+    // Note: AI understanding data is already merged into platforms by backend
+    // We only process ai_understanding here if we need additional comparison data
+    // or if there are platforms with understanding but no bot entry
     if (aiData.ai_understanding && typeof aiData.ai_understanding === 'object') {
       const multiAI = aiData.ai_understanding;
       
-      // Add AI provider comparison if available
+      // Check if there are any providers with understanding data but no platform entry
+      // (This should be rare, as backend handles merging)
       if (multiAI.openai || multiAI.gemini || multiAI.claude) {
         const aiProviders = [
           { name: 'ChatGPT', key: 'openai', icon: '🤖' },
@@ -220,32 +231,16 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           const data = multiAI[provider.key];
           const platformKey = provider.name.toLowerCase();
           
-          // Only add if not already added as a bot platform, or merge if exists
+          // Only add if this provider isn't already in platforms
+          // (Backend should have already included it, but handle edge cases)
           if (data && !data.error) {
             const existingIndex = platforms.findIndex(p => 
               p.name.toLowerCase() === platformKey
             );
             
-            if (existingIndex >= 0) {
-              // Merge AI understanding details into existing platform
-              // Use AI understanding score as primary (more meaningful) and keep bot score in details
-              const understandingScore = Math.round(data.score || 0);
-              const botScore = platforms[existingIndex].score;
-              
-              platforms[existingIndex].score = understandingScore; // Use AI understanding score as primary
-              platforms[existingIndex].details = {
-                ...platforms[existingIndex].details,
-                understanding_level: data.understanding_level,
-                clarity_score: data.clarity_score,
-                key_topics: data.key_topics,
-                main_issues: data.main_issues,
-                recommendations: data.recommendations,
-                bot_accessibility_score: botScore, // Store bot score in details
-                understanding_score: understandingScore,
-                scoreType: 'combined' // Mark as combined score
-              };
-            } else {
-              // Add new platform entry for AI understanding
+            if (existingIndex === -1) {
+              // Edge case: Provider has understanding but no bot/platform entry
+              // This shouldn't happen normally, but handle gracefully
               platforms.push({
                 name: provider.name,
                 icon: provider.icon,
@@ -257,10 +252,13 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                   key_topics: data.key_topics,
                   main_issues: data.main_issues,
                   recommendations: data.recommendations,
-                  scoreType: 'ai_understanding' // Mark as AI understanding score
+                  scoreType: 'ai_understanding',
+                  ai_understanding_available: true,
+                  ai_understanding_score: Math.round(data.score || 0)
                 }
               });
             }
+            // If platform already exists, backend already merged everything correctly
           }
         });
       }
