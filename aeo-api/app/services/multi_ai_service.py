@@ -232,7 +232,7 @@ Respond in JSON format:
 }}"""
         
         response = self.claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=400,
             temperature=0.3,
             messages=[
@@ -241,8 +241,33 @@ Respond in JSON format:
         )
         
         try:
-            result = json.loads(response.content[0].text)
-        except:
+            response_text = response.content[0].text
+            
+            # Extract JSON from markdown code blocks if present
+            if '```json' in response_text:
+                start = response_text.find('```json') + 7
+                end = response_text.find('```', start)
+                json_text = response_text[start:end].strip()
+            elif '```' in response_text:
+                # Handle generic code blocks
+                start = response_text.find('```') + 3
+                end = response_text.find('```', start)
+                json_text = response_text[start:end].strip()
+                # Remove 'json' prefix if present
+                if json_text.lower().startswith('json'):
+                    json_text = json_text[4:].strip()
+            else:
+                # Try to find JSON object directly
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_text = response_text[json_start:json_end]
+                else:
+                    json_text = response_text
+            
+            result = json.loads(json_text)
+        except Exception as e:
+            logging.error(f"Claude JSON parsing failed: {str(e)}")
             # Fallback parsing
             result = {
                 'understanding_level': 'Fair',

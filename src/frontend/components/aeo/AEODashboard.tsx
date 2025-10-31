@@ -24,6 +24,10 @@ interface AIPlatform {
     key_topics?: string[];
     main_issues?: string[];
     recommendations?: string[];
+    bot_accessibility_score?: number;
+    understanding_score?: number;
+    scoreType?: 'bot_accessibility' | 'ai_understanding' | 'combined';
+    [key: string]: any; // Allow additional properties from backend
   };
 }
 
@@ -46,6 +50,7 @@ interface AEODashboardProps {
   // Crawler props
   runCrawl?: boolean;
   isCrawling?: boolean;
+  crawlStatus?: 'idle' | 'running' | 'auditing' | 'completed';
   pageCount?: number;
   crawlStats?: {
     count: number;
@@ -54,7 +59,6 @@ interface AEODashboardProps {
   } | null;
   logs?: string[];
   discoveredPages?: any[];
-  onStopCrawl?: () => void;
 }
 
 const AEODashboard: React.FC<AEODashboardProps> = ({ 
@@ -63,11 +67,11 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   onAnalyze,
   runCrawl = false,
   isCrawling = false,
+  crawlStatus = 'idle',
   pageCount = 0,
   crawlStats = null,
   logs = [],
-  discoveredPages = [],
-  onStopCrawl
+  discoveredPages = []
 }) => {
   const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'audits'>(runCrawl ? 'crawler' : 'data');
   const [showRecommendations, setShowRecommendations] = useState<string | null>(null);
@@ -175,46 +179,88 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
       'claude': '🎭'
     };
 
-    // Check if the API provides platform-specific data
+    // Track which platforms we've already added to avoid duplicates
+    const addedPlatforms = new Set<string>();
+    
+    // Check if the API provides platform-specific data (Bot Accessibility Scores)
     if (aiData.platforms && typeof aiData.platforms === 'object') {
       Object.entries(aiData.platforms).forEach(([name, data]: [string, any]) => {
+        // Map bot names to AI provider names for display
+        const displayName = name === 'GPTBot' ? 'ChatGPT' : 
+                          name === 'Google-Extended' ? 'Gemini' : 
+                          name === 'ClaudeBot' ? 'Claude' : name;
+        
         platforms.push({
-          name: name,
-          icon: platformIcons[name] || name.charAt(0).toUpperCase(),
+          name: displayName,
+          icon: platformIcons[name] || platformIcons[displayName] || name.charAt(0).toUpperCase(),
           score: Math.round(data.score || data.visibility_score || 0),
-          status: data.status || 'LIVE'
+          status: data.status || 'LIVE',
+          details: {
+            ...data.details,
+            scoreType: 'bot_accessibility' // Mark as bot accessibility score
+          }
         });
+        addedPlatforms.add(displayName.toLowerCase());
       });
     }
 
-    // Check if multi-AI analysis is available
+    // Check if multi-AI analysis is available (AI Understanding Scores)
     if (aiData.ai_understanding && typeof aiData.ai_understanding === 'object') {
       const multiAI = aiData.ai_understanding;
       
       // Add AI provider comparison if available
       if (multiAI.openai || multiAI.gemini || multiAI.claude) {
         const aiProviders = [
-          { name: 'OpenAI', key: 'openai', icon: '🤖' },
+          { name: 'ChatGPT', key: 'openai', icon: '🤖' },
           { name: 'Gemini', key: 'gemini', icon: '🧠' },
           { name: 'Claude', key: 'claude', icon: '🎭' }
         ];
         
         aiProviders.forEach(provider => {
           const data = multiAI[provider.key];
+          const platformKey = provider.name.toLowerCase();
+          
+          // Only add if not already added as a bot platform, or merge if exists
           if (data && !data.error) {
-            platforms.push({
-              name: provider.name,
-              icon: provider.icon,
-              score: Math.round(data.score || 0),
-              status: 'LIVE',
-              details: {
+            const existingIndex = platforms.findIndex(p => 
+              p.name.toLowerCase() === platformKey
+            );
+            
+            if (existingIndex >= 0) {
+              // Merge AI understanding details into existing platform
+              // Use AI understanding score as primary (more meaningful) and keep bot score in details
+              const understandingScore = Math.round(data.score || 0);
+              const botScore = platforms[existingIndex].score;
+              
+              platforms[existingIndex].score = understandingScore; // Use AI understanding score as primary
+              platforms[existingIndex].details = {
+                ...platforms[existingIndex].details,
                 understanding_level: data.understanding_level,
                 clarity_score: data.clarity_score,
                 key_topics: data.key_topics,
                 main_issues: data.main_issues,
-                recommendations: data.recommendations
-              }
-            });
+                recommendations: data.recommendations,
+                bot_accessibility_score: botScore, // Store bot score in details
+                understanding_score: understandingScore,
+                scoreType: 'combined' // Mark as combined score
+              };
+            } else {
+              // Add new platform entry for AI understanding
+              platforms.push({
+                name: provider.name,
+                icon: provider.icon,
+                score: Math.round(data.score || 0),
+                status: 'LIVE',
+                details: {
+                  understanding_level: data.understanding_level,
+                  clarity_score: data.clarity_score,
+                  key_topics: data.key_topics,
+                  main_issues: data.main_issues,
+                  recommendations: data.recommendations,
+                  scoreType: 'ai_understanding' // Mark as AI understanding score
+                }
+              });
+            }
           }
         });
       }
@@ -575,13 +621,12 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
                   <h3>🕷️ Crawling Status</h3>
                   <div className="status-indicator">
                     <div className={`status-dot ${isCrawling ? 'active' : ''}`}></div>
-                    <span>{isCrawling ? 'Crawling...' : 'Completed'}</span>
+                    <span>
+                      {crawlStatus === 'running' ? 'Crawling...' : 
+                       crawlStatus === 'auditing' ? 'Auditing...' : 
+                       'Completed'}
+                    </span>
                   </div>
-                  {isCrawling && onStopCrawl && (
-                    <button onClick={onStopCrawl} className="stop-button">
-                      🛑 Stop
-                    </button>
-                  )}
                 </div>
                 <div className="crawler-stats">
                   <div className="stat-box">

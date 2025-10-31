@@ -27,7 +27,7 @@ export interface AuditExecution {
     scheduleId: number;
     startedAt: string;
     completedAt?: string;
-    status: 'running' | 'completed' | 'failed';
+    status: 'running' | 'completed' | 'failed' | 'auditing';
     errorMessage?: string;
     urlsProcessed: number;
     urlsSuccessful: number;

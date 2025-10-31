@@ -26,7 +26,7 @@ export interface ScheduleExecution {
     sessionId: number;
     startedAt: string;
     completedAt?: string;
-    status: 'running' | 'completed' | 'failed';
+    status: 'running' | 'completed' | 'failed' | 'auditing';
     errorMessage?: string;
     pagesCrawled: number;
     resourcesFound: number;

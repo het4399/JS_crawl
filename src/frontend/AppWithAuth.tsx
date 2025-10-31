@@ -32,6 +32,7 @@ const AppWithAuth: React.FC = () => {
   
   // Live crawling state
   const [isCrawling, setIsCrawling] = useState<boolean>(false);
+  const [crawlStatus, setCrawlStatus] = useState<'idle' | 'running' | 'auditing' | 'completed'>('idle');
   const [pageCount, setPageCount] = useState<number>(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [pages, setPages] = useState<string[]>([]);
@@ -76,6 +77,7 @@ const AppWithAuth: React.FC = () => {
         pagesPerSecond: data.pagesPerSecond || 0
       });
       setIsCrawling(false);
+      setCrawlStatus('completed');
       setLogs(prev => [...prev, `✅ Crawl completed! Total URLs: ${data.count}`]);
     });
 
@@ -86,6 +88,16 @@ const AppWithAuth: React.FC = () => {
         const message = data?.message || `Session ${data?.status || ''}`.trim();
         if (message) {
           setLogs(prev => [...prev.slice(-99), message]);
+        }
+        // Update crawlStatus if provided
+        if (data?.status) {
+          if (data.status === 'running' || data.status === 'auditing') {
+            setIsCrawling(true);
+            setCrawlStatus(data.status);
+          } else if (data.status === 'completed' || data.status === 'failed') {
+            setIsCrawling(false);
+            setCrawlStatus('completed');
+          }
         }
       } catch {}
     });
@@ -149,6 +161,7 @@ const AppWithAuth: React.FC = () => {
       setError(null);
       setRunCrawl(false);
       setIsCrawling(false);
+      setCrawlStatus('idle');
       setPageCount(0);
       setLogs([]);
       setPages([]);
@@ -200,6 +213,7 @@ const AppWithAuth: React.FC = () => {
     // Reset crawling state
     if (runCrawl) {
       setIsCrawling(true);
+      setCrawlStatus('running');
       setPageCount(0);
       setLogs([]);
       setPages([]);
@@ -218,7 +232,10 @@ const AppWithAuth: React.FC = () => {
       
       // Show reuse modal if server indicates reuse
       if ((analysisResult as any)?.reuseMode && (analysisResult as any)?.sessionId) {
-        setIsCrawling(false);
+        // Only set isCrawling to false if no audits are running
+        const auditsRunning = (analysisResult as any).auditsTriggered || (analysisResult as any).auditsInProgress;
+        setIsCrawling(auditsRunning);
+        setCrawlStatus(auditsRunning ? 'auditing' : 'completed');
         setLoading(false);
         setReusePrompt({
           sessionId: (analysisResult as any).sessionId,
@@ -286,9 +303,11 @@ const AppWithAuth: React.FC = () => {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to analyze URL');
+      setIsCrawling(false); // Only set to false on error
+      setCrawlStatus('idle');
     } finally {
       setLoading(false);
-      setIsCrawling(false);
+      // Don't set isCrawling to false here - let SSE events handle the state
     }
   };
 
@@ -341,6 +360,14 @@ const AppWithAuth: React.FC = () => {
             ? parseFloat((totalItems / sessionData.session.duration).toFixed(2))
             : 0
         });
+        
+        // Set isCrawling based on session status
+        const sessionStatus = sessionData.session.status;
+        setIsCrawling(sessionStatus === 'running' || sessionStatus === 'auditing');
+        setCrawlStatus(sessionStatus as 'running' | 'auditing' | 'completed');
+      } else {
+        setIsCrawling(false);
+        setCrawlStatus('completed');
       }
       // Build and set AnalysisResult for dashboard metrics
       if (aeoResult && aeoResult.results) {
@@ -419,6 +446,7 @@ const AppWithAuth: React.FC = () => {
       setReusePrompt(null);
       setLoading(true);
       setIsCrawling(true);
+      setCrawlStatus('running');
       setLogs([]);
       setPages([]);
       setCrawlStats(null);
@@ -475,6 +503,11 @@ const AppWithAuth: React.FC = () => {
             ? parseFloat((totalItems / sessionData.session.duration).toFixed(2))
             : 0
         });
+        
+        // Set isCrawling based on session status
+        const sessionStatus = sessionData.session.status;
+        setIsCrawling(sessionStatus === 'running' || sessionStatus === 'auditing');
+        setCrawlStatus(sessionStatus as 'running' | 'auditing' | 'completed');
       } else {
         // Fallback crawl stats based on available data
         setCrawlStats({
@@ -482,6 +515,8 @@ const AppWithAuth: React.FC = () => {
           duration: 0,
           pagesPerSecond: 0
         });
+        setIsCrawling(false);
+        setCrawlStatus('completed');
       }
       
       // Restore AEO result if available
@@ -760,14 +795,11 @@ const AppWithAuth: React.FC = () => {
               result={result}
               runCrawl={runCrawl}
               isCrawling={isCrawling}
+              crawlStatus={crawlStatus}
               pageCount={pageCount}
               crawlStats={crawlStats}
               logs={logs}
               discoveredPages={pages}
-              onStopCrawl={() => {
-                fetch('/crawl/stop', { method: 'POST' });
-                setIsCrawling(false);
-              }}
             />
           </div>
         )}
