@@ -420,8 +420,37 @@ def extract_keywords_from_html(html: str, url: str, final_url: str, lang_guess: 
     # Choose parent keyword
     parent = choose_parent_keyword(top_keywords, signals["title"], h1_h2_text, " ".join(signals["url_tokens"]))
     
-    # Build hierarchy with URL as root, parent keyword as single child
-    other_keywords = [kw for kw in top_keywords if kw["text"] != parent["text"]]
+    # Handle case where no parent keyword is found
+    if not parent:
+        # If no parent found, use the top keyword as fallback
+        if top_keywords:
+            parent = {
+                "text": top_keywords[0]["text"],
+                "score": top_keywords[0]["score"],
+                "freq": top_keywords[0]["freq"]
+            }
+            other_keywords = top_keywords[1:]
+        else:
+            # No keywords at all - return empty result
+            return {
+                "url": final_url or url,
+                "language": language,
+                "parent": None,
+                "children": [],
+                "tree": TreeNode(url, 0).to_dict(),
+                "keywords": [],
+                "debug": {
+                    "total_candidates": len(candidates),
+                    "scored_keywords": len(scored),
+                    "validated_keywords": len(validated_keywords),
+                    "top_keywords_count": len(top_keywords),
+                    "parent_selected": None,
+                    "parent_score": None
+                }
+            }
+    else:
+        # Build hierarchy with URL as root, parent keyword as single child
+        other_keywords = [kw for kw in top_keywords if kw["text"] != parent["text"]]
     
     # Create URL as root node
     url_root = TreeNode(url, 0)  # URL has no score
