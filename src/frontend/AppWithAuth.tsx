@@ -185,7 +185,6 @@ const AppWithAuth: React.FC = () => {
     auditsInProgress?: boolean;
     message?: string;
   }>(null);
-  const [reuseRunAudits, setReuseRunAudits] = React.useState<boolean>(false);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -298,6 +297,18 @@ const AppWithAuth: React.FC = () => {
     if (!reusePrompt) return;
     try {
       setLoading(true);
+      // Share session with user when they click "View previous results"
+      // This ensures it appears in their history
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/sessions/${reusePrompt.sessionId}/share`, {
+          method: 'POST',
+          headers,
+          credentials: 'include'
+        });
+      } catch {}
       const sessionData = await apiService.getSessionData(reusePrompt.sessionId);
       // Fetch AEO results for this session to populate the dashboard metrics
       let aeoResult: any = null;
@@ -394,17 +405,6 @@ const AppWithAuth: React.FC = () => {
         } as AnalysisResult);
       }
       setRunCrawl(true);
-      // Optionally trigger audits on existing session
-      if (reuseRunAudits) {
-        try {
-          await fetch('/crawl', {
-            method: 'POST',
-            headers: (apiService as any).getAuthHeaders?.() || { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ url: reusePrompt.url, runAudits: true, auditDevice })
-          });
-        } catch {}
-      }
       setReusePrompt(null);
     } catch (e: any) {
       setError(e.message || 'Failed to load previous results');
@@ -424,7 +424,7 @@ const AppWithAuth: React.FC = () => {
       setCrawlStats(null);
       const analysisResult = await apiService.analyzeUrl(reusePrompt.url, {
         allowSubdomains,
-        runAudits: reuseRunAudits || runAudits,
+        runAudits,
         auditDevice,
         captureLinkDetails,
         forceRecrawl: true,
@@ -816,18 +816,6 @@ const AppWithAuth: React.FC = () => {
                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-500/25">Audits will start</span>
                   )}
                 </div>
-              </div>
-
-              <div className="px-6 py-5">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={reuseRunAudits}
-                    onChange={(e) => setReuseRunAudits(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
-                  />
-                <span className="text-sm text-gray-300">Run performance audits</span>
-                </label>
               </div>
 
               <div className="flex items-center justify-end gap-3 border-t border-gray-800 px-6 py-4">

@@ -202,7 +202,7 @@ export const CrawlHistory: React.FC<CrawlHistoryProps> = ({ onSelectCrawl }) => 
                   <div>
                     <p className="text-xs text-purple-200">AEO Score</p>
                     <p className="text-2xl font-bold text-white">
-                      {item.aeoResult.overallScore.toFixed(1)}%
+                      {Math.round(item.aeoResult.overallScore)}%
                     </p>
                   </div>
                   {/* <div

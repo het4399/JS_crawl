@@ -255,6 +255,34 @@ app.post('/api/schedules/:id/trigger', authenticateUser, async (req, res) => {
     }
 });
 
+// Share session endpoint - called when user views previous results
+app.post('/api/sessions/:sessionId/share', authenticateUser, (req, res) => {
+    try {
+        const userId = req.user!.userId;
+        const sessionId = parseInt(req.params.sessionId);
+        
+        if (isNaN(sessionId)) {
+            return res.status(400).json({ error: 'Invalid session ID' });
+        }
+        
+        const db = getDatabase();
+        const session = db.getCrawlSession(sessionId);
+        
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        
+        // Share session with user
+        db.shareSessionWithUser(sessionId, userId);
+        
+        logger.info('Session shared with user', { sessionId, userId });
+        res.json({ success: true, message: 'Session shared successfully' });
+    } catch (error) {
+        logger.error('Failed to share session', error as Error);
+        res.status(500).json({ error: 'Failed to share session' });
+    }
+});
+
 // Crawl history endpoint
 app.get('/api/crawl-history', authenticateUser, (req, res) => {
     try {
@@ -644,8 +672,8 @@ app.post('/crawl',
         }
         
         if (existingSession) {
-            // Share session with user first
-            db.shareSessionWithUser(existingSession.id, userId);
+            // Don't share session yet - only share when user clicks "View previous results"
+            // This prevents adding sessions to history if user cancels the modal
             
             // Check if audits are requested
             if (runAudits) {
