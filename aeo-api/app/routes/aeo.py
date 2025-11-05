@@ -4,6 +4,7 @@ from typing import List, Optional
 import requests
 import logging
 from ..services.aeo_services_consolidated import AEOServiceOrchestrator
+from ..services.schema_generator import SchemaGenerator
 
 router = APIRouter(prefix="/api/aeo", tags=["AEOCHECKER"])
 
@@ -20,8 +21,13 @@ class StructuredDataRequest(BaseModel):
     url: str
     html_content: Optional[str] = None
 
+class SchemaGenerateRequest(BaseModel):
+    url: str
+    html_content: Optional[str] = None
+
 # Initialize service orchestrator
 aeo_orchestrator = AEOServiceOrchestrator()
+schema_generator = SchemaGenerator()
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_aeo(request: AnalyzeRequest):
@@ -85,6 +91,38 @@ async def analyze_structured_data(request: StructuredDataRequest):
     except Exception as e:
         return AnalyzeResponse(success=False, results={}, error=str(e))
 
+@router.post("/generate-schema", response_model=AnalyzeResponse)
+async def generate_schema(request: SchemaGenerateRequest):
+    """
+    Generate Schema.org markup for a given URL using AI
+    """
+    try:
+        # Add protocol if missing
+        url = request.url
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Get HTML content if not provided
+        html_content = request.html_content
+        if not html_content:
+            try:
+                html_response = requests.get(url, timeout=10)
+                html_content = html_response.text
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f'Failed to fetch URL: {str(e)}')
+        
+        # Generate schema markup
+        logging.info(f"Generating schema markup for {url}")
+        results = schema_generator.generate_schema(html_content, url)
+        
+        if not results.get('success', False):
+            raise HTTPException(status_code=400, detail=results.get('message', 'Schema generation failed'))
+        
+        return AnalyzeResponse(success=True, results=results)
+        
+    except Exception as e:
+        return AnalyzeResponse(success=False, results={}, error=str(e))
+
 @router.get("/health")
 async def health_check():
     """AEOCHECKER health check"""
@@ -98,6 +136,7 @@ async def health_check():
             "Competitor Analysis",
             "Knowledge Base Analysis",
             "Answerability Analysis",
-            "Crawler Accessibility Analysis"
+            "Crawler Accessibility Analysis",
+            "Schema.org Markup Generator"
         ]
     }

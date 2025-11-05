@@ -73,8 +73,54 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
   logs = [],
   discoveredPages = []
 }) => {
-  const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'audits'>(runCrawl ? 'crawler' : 'data');
+  const [activeView, setActiveView] = useState<'crawler' | 'data' | 'links' | 'tree' | 'audits' | 'schema'>(runCrawl ? 'crawler' : 'data');
   const [showRecommendations, setShowRecommendations] = useState<string | null>(null);
+  const [schemaData, setSchemaData] = useState<any>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [copiedSchema, setCopiedSchema] = useState(false);
+  const [schemaFormat, setSchemaFormat] = useState<'json-ld' | 'rdfa'>('json-ld');
+
+  // Generate schema markup
+  const generateSchema = async () => {
+    if (!url) return;
+    
+    setSchemaLoading(true);
+    setSchemaError(null);
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/aeo/generate-schema', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setSchemaData(data.results);
+      } else {
+        setSchemaError(data.error || 'Failed to generate schema');
+      }
+    } catch (error: any) {
+      setSchemaError(error.message || 'Failed to generate schema');
+    } finally {
+      setSchemaLoading(false);
+    }
+  };
+
+  // Copy schema to clipboard
+  const copySchemaToClipboard = () => {
+    const textToCopy = schemaFormat === 'json-ld' ? schemaData?.schema_text : schemaData?.rdfa_markup;
+    if (!textToCopy) return;
+    
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedSchema(true);
+      setTimeout(() => setCopiedSchema(false), 2000);
+    });
+  };
 
   // Get recommendations for specific modules
   const getModuleRecommendations = (moduleName: string): string[] => {
@@ -276,34 +322,40 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
     return platforms;
   };
 
-  // Dynamically generate competitors from API response
+  // Dynamically generate competitors from API response (DataForSEO format)
   const getCompetitors = (): Competitor[] => {
     if (!result || !result.detailed_analysis?.competitor_analysis) {
       // Fallback to demo data
       return [
-        { name: 'Competitor Analysis Not Available', count: 0 }
+        { name: 'No Data', count: 0 }
       ];
     }
 
     const compData = result.detailed_analysis.competitor_analysis;
     
-    // API returns: competitor_analysis.competitor_analysis as array
-    if (compData.competitor_analysis && Array.isArray(compData.competitor_analysis)) {
-      // Extract competitor URLs/domains
-      return compData.competitor_analysis.map((comp: any, index: number) => {
-        const url = comp.url || comp.domain || `Competitor ${index + 1}`;
-        // Extract domain name from URL
-        const domain = url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    // Check if there's an error (API not configured)
+    if (compData.error) {
+      return [
+        { name: 'Not Configured', count: 0 }
+      ];
+    }
+    
+    // DataForSEO API returns: top_competitors as array of {domain, referring_domains}
+    if (compData.top_competitors && Array.isArray(compData.top_competitors)) {
+      // Map top competitors to display format
+      return compData.top_competitors.map((comp: any) => {
+        const domain = comp.domain || 'Unknown';
+        const count = comp.referring_domains || 0;
         return {
           name: domain,
-          count: comp.schema_count || 1
+          count: count
         };
       });
     }
 
-    // Fallback - show that competitor analysis exists but no data
+    // Fallback - show that competitor analysis exists but no competitors data
     return [
-      { name: 'Competitor Data Available', count: compData.score || 0 }
+      { name: 'No Competitors Found', count: 0 }
     ];
   };
 
@@ -494,16 +546,31 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
             </div>
           </div>
           <div className="competitor-description">
-            Your company or product was mentioned in industry/product related searches.
+            {result?.detailed_analysis?.competitor_analysis?.metrics ? (
+              <>
+                Your domain has <strong>{result.detailed_analysis.competitor_analysis.metrics.total_referring_domains || 0}</strong> referring domains 
+                with <strong>{result.detailed_analysis.competitor_analysis.metrics.total_individual_backlinks || 0}</strong> total backlinks.
+              </>
+            ) : (
+              'Analyzing your backlink profile and competitive landscape.'
+            )}
           </div>
           <div className="competitors-list">
-            <div className="competitors-label">Competitors Mentioned:</div>
+            <div className="competitors-label">Top Referring Domains:</div>
             <div className="competitors-tags">
-              {competitors.map((competitor, index) => (
-                <span key={index} className="competitor-tag">
-                  {competitor.count} {competitor.name}
+              {competitors.length > 0 && competitors[0].name !== 'No Data' && competitors[0].name !== 'Not Configured' ? (
+                competitors.map((competitor, index) => (
+                  <span key={index} className="competitor-tag">
+                    <span className="competitor-count">{competitor.count}</span> {competitor.name}
+                  </span>
+                ))
+              ) : (
+                <span className="competitor-tag-empty">
+                  {competitors[0]?.name === 'Not Configured' 
+                    ? 'Configure DataForSEO API to see competitor data' 
+                    : 'No competitor data available'}
                 </span>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -606,6 +673,12 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
             className={`tab-button ${activeView === 'audits' ? 'active' : ''}`}
           >
             🔍 Performance Audits
+          </button>
+          <button
+            onClick={() => setActiveView('schema')}
+            className={`tab-button ${activeView === 'schema' ? 'active' : ''}`}
+          >
+            📝 Schema Generator
           </button>
         </div>
 
@@ -721,6 +794,98 @@ const AEODashboard: React.FC<AEODashboardProps> = ({
           )}
           
           {activeView === 'audits' && <AuditsPage />}
+          
+          {activeView === 'schema' && (
+            <div className="schema-generator-content">
+              <div className="content-header">
+                <div>
+                  <h3>📝 Schema.org Markup Generator</h3>
+                  <p>Generate SEO-optimized Schema.org JSON-LD markup using AI</p>
+                </div>
+                <button 
+                  className="action-button primary"
+                  onClick={generateSchema}
+                  disabled={schemaLoading || !url}
+                >
+                  {schemaLoading ? '⏳ Generating...' : '✨ Generate Schema'}
+                </button>
+              </div>
+
+              {schemaError && (
+                <div className="schema-error">
+                  <div className="error-icon">⚠️</div>
+                  <div>
+                    <h4>Error Generating Schema</h4>
+                    <p>{schemaError}</p>
+                  </div>
+                </div>
+              )}
+
+              {schemaLoading && (
+                <div className="schema-loading">
+                  <div className="loading-spinner">
+                    <div className="spinner"></div>
+                    <p>Analyzing page content and generating schema markup...</p>
+                  </div>
+                </div>
+              )}
+
+              {schemaData && !schemaLoading && (
+                <div className="schema-results">
+                  {/* Schema Code */}
+                  <div className="schema-code-card">
+                    <div className="schema-code-header">
+                      <div className="schema-header-left">
+                        <h4>Schema Markup</h4>
+                        <div className="schema-format-toggle">
+                          <button 
+                            className={`format-button ${schemaFormat === 'json-ld' ? 'active' : ''}`}
+                            onClick={() => setSchemaFormat('json-ld')}
+                          >
+                            JSON-LD
+                          </button>
+                          <button 
+                            className={`format-button ${schemaFormat === 'rdfa' ? 'active' : ''}`}
+                            onClick={() => setSchemaFormat('rdfa')}
+                          >
+                            RDFa
+                          </button>
+                        </div>
+                      </div>
+                      <button 
+                        className="copy-button"
+                        onClick={copySchemaToClipboard}
+                      >
+                        {copiedSchema ? '✅ Copied!' : '📋 Copy to Clipboard'}
+                      </button>
+                    </div>
+                    <div className="schema-code-container">
+                      <pre className="schema-code">
+                        <code>{schemaFormat === 'json-ld' ? schemaData.schema_text : schemaData.rdfa_markup}</code>
+                      </pre>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {!schemaData && !schemaLoading && !schemaError && (
+                <div className="empty-state">
+                  <div className="empty-state-icon">📝</div>
+                  <h3>Generate Schema Markup</h3>
+                  <p>
+                    Click the "Generate Schema" button above to create SEO-optimized Schema.org markup for your page.
+                    <br /><br />
+                    Our AI will analyze your page content and generate the most appropriate schema type
+                    (Article, Product, LocalBusiness, Organization, etc.) with all relevant properties.
+                  </p>
+                  <div className="empty-state-hint">
+                    💡 Make sure your OpenAI API key is configured for AI-powered schema generation
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

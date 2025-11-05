@@ -68,12 +68,10 @@ class AEOServiceOrchestrator:
                 'knowledge_base': self.analyze_knowledge_base(url, html_content),
                 'answerability': self.analyze_answerability(url, html_content),
                 'crawler_accessibility': self.analyze_crawler_accessibility(url, html_content),
-                'structured_data': self.analyze_structured_data(url, html_content)
+                'structured_data': self.analyze_structured_data(url, html_content),
+                # Competitor analysis now runs automatically (uses DataForSEO API)
+                'competitor_analysis': self.analyze_competitor_landscape(url, competitor_urls or [])
             }
-            
-            # Add competitor analysis if URLs provided
-            if competitor_urls:
-                results['competitor_analysis'] = self.analyze_competitor_landscape(url, competitor_urls)
             
             # Calculate overall score and module scores
             scores = []
